@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Dashboard', activePath='/', content=~{::#page-content})}">
+<body>
+<div id="page-content">
+    <h1 class="page-title">Dashboard</h1>
+    <p class="page-subtitle">Overview of your projects and issues</p>
+
+    <div class="grid grid-4" style="margin-bottom: 24px;">
+        <div class="card">
+            <div class="card-body">
+                <h3>Projects</h3>
+                <div class="stat" id="project-count">&mdash;</div>
+                <div class="muted small">Active projects</div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <h3>Issues</h3>
+                <div class="stat" id="issue-count">&mdash;</div>
+                <div class="muted small">Total issues</div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <h3>Tasklists</h3>
+                <div class="stat" id="tasklist-count">&mdash;</div>
+                <div class="muted small">Task lists</div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <h3>Tasks</h3>
+                <div class="stat" id="task-count">&mdash;</div>
+                <div class="muted small">Individual tasks</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom: 24px;">
+        <div class="card">
+            <div class="card-body">
+                <h2>Issues by Status</h2>
+                <div id="issue-status-chart" class="status-box">Loading&hellip;</div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <h2>Recent Projects</h2>
+                <div id="recent-projects" class="status-box">Loading&hellip;</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+    function statusPill(status) {
+        var cls = 'pill pill-' + status.toLowerCase();
+        return '<span class="' + cls + '">' + esc(status) + '</span>';
+    }
+
+    async function refresh() {
+        try {
+            var [projectsRes, issuesRes, tasklistsRes, tasksRes] = await Promise.all([
+                fetch('/api/projects'),
+                fetch('/api/issues'),
+                fetch('/api/tasklists'),
+                fetch('/api/tasks')
+            ]);
+            var projects = await projectsRes.json();
+            var issues = await issuesRes.json();
+            var tasklists = await tasklistsRes.json();
+            var tasks = await tasksRes.json();
+
+            document.getElementById('project-count').textContent = projects.length;
+            document.getElementById('issue-count').textContent = issues.length;
+            document.getElementById('tasklist-count').textContent = tasklists.length;
+            document.getElementById('task-count').textContent = tasks.length;
+
+            var statusCounts = {};
+            issues.forEach(function(i) {
+                statusCounts[i.status] = (statusCounts[i.status] || 0) + 1;
+            });
+            var statusHtml = '<div class="stack" style="gap:6px;">';
+            Object.keys(statusCounts).forEach(function(s) {
+                statusHtml += '<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    + statusPill(s)
+                    + '<span>' + statusCounts[s] + '</span></div>';
+            });
+            if (Object.keys(statusCounts).length === 0) {
+                statusHtml += '<div class="muted">No issues yet</div>';
+            }
+            statusHtml += '</div>';
+            document.getElementById('issue-status-chart').innerHTML = statusHtml;
+
+            var projHtml = '';
+            if (projects.length === 0) {
+                projHtml = '<div class="muted">No projects yet. <a href="/ui/projects">Create one</a></div>';
+            } else {
+                projHtml = '<div class="stack" style="gap:6px;">';
+                projects.slice(0, 5).forEach(function(p) {
+                    projHtml += '<div style="display:flex;justify-content:space-between;align-items:center;">'
+                        + '<a href="/ui/projects/' + esc(p.id) + '">' + esc(p.name || p.id.substring(0,8)) + '</a>'
+                        + '</div>';
+                });
+                projHtml += '</div>';
+            }
+            document.getElementById('recent-projects').innerHTML = projHtml;
+        } catch(e) {
+            console.error('Dashboard refresh failed', e);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', refresh);
+    </script>
+
+</div>
+</body>
+</html>

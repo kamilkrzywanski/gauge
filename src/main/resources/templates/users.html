@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Users', activePath='/ui/users', content=~{::#page-content})}">
+<body>
+<div id="page-content">
+    <h1 class="page-title">Users</h1>
+    <p class="page-subtitle">Manage user accounts</p>
+
+    <div class="card" style="margin-bottom:24px;">
+        <div class="card-body">
+            <h3 style="margin-bottom:12px;">Create User</h3>
+            <form id="create-form" style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;">
+                <div class="form-group" style="flex:1;min-width:120px;">
+                    <label>Username</label>
+                    <input type="text" id="f-username" placeholder="Username" required>
+                </div>
+                <div class="form-group" style="flex:1;min-width:120px;">
+                    <label>Password</label>
+                    <input type="password" id="f-password" placeholder="Password" required>
+                </div>
+                <div class="form-group" style="flex:0 0 120px;">
+                    <label>Role</label>
+                    <select id="f-role">
+                        <option value="admin">Admin</option>
+                        <option value="user">User</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-bottom:0;">Create</button>
+            </form>
+            <div id="create-status" class="status-box" style="margin-top:8px;"></div>
+        </div>
+    </div>
+
+    <h2>All Users</h2>
+    <div id="users-list">Loading&hellip;</div>
+
+    <script>
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+    function rolePill(role) {
+        var cls = 'pill pill-' + role.toLowerCase();
+        return '<span class="' + cls + '">' + esc(role) + '</span>';
+    }
+
+    function renderUsers(users) {
+        if (!users || users.length === 0) {
+            document.getElementById('users-list').innerHTML = '<div class="empty-state"><div class="icon">&#x1F464;</div><div>No users yet. Create one above.</div></div>';
+            return;
+        }
+        var html = '<table><thead><tr>'
+            + '<th>Username</th><th>Role</th><th></th>'
+            + '</tr></thead><tbody>';
+        users.forEach(function(u) {
+            html += '<tr>'
+                + '<td><strong>' + esc(u.username) + '</strong></td>'
+                + '<td>' + rolePill(u.role) + '</td>'
+                + '<td style="display:flex;gap:6px;">'
+                + '<button class="btn btn-small btn-warning" onclick="showChangePassword(\'' + esc(u.id) + '\', \'' + esc(u.username) + '\')">Change Password</button>'
+                + '<button class="btn btn-small btn-danger" onclick="deleteUser(\'' + esc(u.id) + '\')">Delete</button>'
+                + '</td>'
+                + '</tr>';
+        });
+        html += '</tbody></table>';
+        document.getElementById('users-list').innerHTML = html;
+    }
+
+    async function loadUsers() {
+        try {
+            var res = await fetch('/api/users');
+            if (res.status === 403) {
+                document.getElementById('users-list').innerHTML = '<div class="empty-state"><div class="icon">&#x1F6AB;</div><div>Admin access required.</div></div>';
+                return;
+            }
+            var users = await res.json();
+            renderUsers(users);
+        } catch(e) {
+            document.getElementById('users-list').innerHTML = '<div class="muted">Error loading users</div>';
+        }
+    }
+
+    async function deleteUser(id) {
+        if (!confirm('Delete this user?')) return;
+        try {
+            var res = await fetch('/api/users/' + id, { method: 'DELETE' });
+            if (res.ok || res.status === 204) {
+                loadUsers();
+            } else {
+                var err = await res.json();
+                alert(err.error || 'Delete failed');
+            }
+        } catch(e) { alert('Delete failed'); }
+    }
+
+    function showChangePassword(id, username) {
+        var newPass = prompt('Enter new password for ' + username + ':');
+        if (newPass === null) return;
+        if (!newPass.trim()) {
+            alert('Password cannot be empty');
+            return;
+        }
+        changePassword(id, newPass);
+    }
+
+    async function changePassword(id, newPassword) {
+        try {
+            var res = await fetch('/api/users/' + id + '/password', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({password: newPassword})
+            });
+            if (res.ok) {
+                alert('Password changed.');
+            } else {
+                var err = await res.json();
+                alert(err.error || 'Failed to change password');
+            }
+        } catch(e) { alert('Request failed'); }
+    }
+
+    document.getElementById('create-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var statusEl = document.getElementById('create-status');
+        statusEl.textContent = 'Creating&hellip;';
+        try {
+            var body = {
+                username: document.getElementById('f-username').value,
+                password: document.getElementById('f-password').value,
+                role: document.getElementById('f-role').value
+            };
+            var res = await fetch('/api/users', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            if (res.ok) {
+                statusEl.innerHTML = '<span class="pill pill-done">Created!</span>';
+                document.getElementById('f-username').value = '';
+                document.getElementById('f-password').value = '';
+                loadUsers();
+            } else {
+                var err = await res.json();
+                statusEl.innerHTML = '<span class="pill pill-failed">' + esc(err.error || 'Error creating user') + '</span>';
+            }
+        } catch(e) {
+            statusEl.innerHTML = '<span class="pill pill-failed">Request failed</span>';
+        }
+    });
+
+    loadUsers();
+    </script>
+</div>
+</body>
+</html>

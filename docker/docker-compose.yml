@@ -1,0 +1,35 @@
+# ── Gauge Docker Compose ────────────────────────────────────────────
+version: "3.8"
+
+services:
+  tracker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: gauge
+    volumes:
+      - tracker-data:/app/data
+    networks:
+      - gaugenet
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: gauge-nginx
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    networks:
+      - gaugenet
+    depends_on:
+      - tracker
+    restart: unless-stopped
+
+volumes:
+  tracker-data:
+
+networks:
+  gaugenet:
+    driver: bridge

@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Issue Detail', activePath='/ui/projects', content=~{::#page-content})}">
+<body>
+<div id="page-content">
+    <p class="page-subtitle">Viewing issue <code th:text="${issueId}">…</code></p>
+    <h1 class="page-title" id="issue-title">Issue Detail</h1>
+
+    <div class="breadcrumb" id="issue-path">
+        <a href="/ui/projects">Projects</a>
+        <span class="sep">/</span>
+        <span id="breadcrumb-project">Project</span>
+        <span class="sep">/</span>
+        <span id="breadcrumb-issue">Issue</span>
+    </div>
+
+    <div class="detail-grid detail-grid-3" style="margin-bottom:24px;">
+        <div class="card">
+            <div class="card-body">
+                <h3>Issue Info</h3>
+                <div id="issue-info" class="stack" style="gap:12px;">
+                    <div class="muted">Loading&hellip;</div>
+                </div>
+            </div>
+        </div>
+        <div class="card card-half">
+            <div class="card-body">
+                <h3>Update</h3>
+                <div class="stack" style="gap:8px;">
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select id="status-select">
+                            <option value="TODO">TODO</option>
+                            <option value="DOING">DOING</option>
+                            <option value="DONE">DONE</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Priority</label>
+                        <select id="priority-select">
+                            <option value="LOW">Low</option>
+                            <option value="NORMAL">Normal</option>
+                            <option value="HIGH">High</option>
+                        </select>
+                    </div>
+                    <button id="update-btn" class="btn btn-primary">Update</button>
+                </div>
+                <div id="update-status" class="status-box" style="margin-top:8px;"></div>
+            </div>
+        </div>
+        <div class="card card-half">
+            <div class="card-body">
+                <h3>Actions</h3>
+                <div class="stack" style="gap:8px;">
+                    <a id="new-tasklist-link" href="#" class="btn btn-primary" style="text-align:center;">+ New Tasklist</a>
+                    <button id="delete-issue-btn" class="btn btn-danger" style="display:none;width:100%;">Delete Issue</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2 class="section-title">Tasklists</h2>
+    <div id="tasklists-list">Loading&hellip;</div>
+
+    <script th:inline="javascript">
+    var issueId = /*[[${issueId}]]*/ '';
+
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+    function statusPill(status) {
+        var cls = 'pill pill-' + status.toLowerCase();
+        return '<span class="' + cls + '">' + esc(status) + '</span>';
+    }
+
+    function priorityPill(priority) {
+        var cls = 'pill pill-' + priority.toLowerCase();
+        return '<span class="' + cls + '">' + esc(priority) + '</span>';
+    }
+
+    async function loadIssue() {
+        try {
+            var res = await fetch('/api/issues/' + issueId);
+            if (!res.ok) {
+                document.getElementById('issue-info').innerHTML = '<div class="muted">Issue not found</div>';
+                return;
+            }
+            var issue = await res.json();
+            document.getElementById('issue-title').textContent = issue.title || 'Issue Detail';
+            document.getElementById('breadcrumb-issue').textContent = issue.title || issueId.substring(0,8);
+
+            if (issue.projectId) {
+                var projRes = await fetch('/api/projects/' + issue.projectId);
+                if (projRes.ok) {
+                    var proj = await projRes.json();
+                    document.getElementById('breadcrumb-project').innerHTML = '<a href="/ui/projects/' + esc(issue.projectId) + '">' + esc(proj.name || issue.projectId.substring(0,8)) + '</a>';
+                }
+            }
+
+            var infoHtml = ''
+                + '<div><span class="detail-label">Title</span>'
+                + '<div class="detail-value" style="display:flex;align-items:center;gap:8px;">'
+                + '<span id="display-title">' + esc(issue.title || '&mdash;') + '</span>'
+                + '<input id="edit-title" type="text" value="' + esc(issue.title || '') + '" style="display:none;flex:1;padding:4px 8px;font-size:14px;">'
+                + '<button id="save-title-btn" class="btn btn-small btn-primary" style="display:none;">Save</button>'
+                + '<button id="cancel-title-btn" class="btn btn-small" style="display:none;">Cancel</button>'
+                + '<button id="edit-title-btn" class="edit-icon-btn" title="Edit title">&#9998;</button>'
+                + '</div></div>'
+                + '<div><span class="detail-label">Description</span>'
+                + '<div class="detail-value" style="display:flex;align-items:center;gap:8px;">'
+                + '<span id="display-desc" style="white-space:pre-wrap;">' + esc(issue.description || '&mdash;') + '</span>'
+                + '<textarea id="edit-desc" style="display:none;flex:1;padding:4px 8px;font-size:14px;min-height:60px;resize:vertical;">' + esc(issue.description || '') + '</textarea>'
+                + '<button id="save-desc-btn" class="btn btn-small btn-primary" style="display:none;">Save</button>'
+                + '<button id="cancel-desc-btn" class="btn btn-small" style="display:none;">Cancel</button>'
+                + '<button id="edit-desc-btn" class="edit-icon-btn" title="Edit description">&#9998;</button>'
+                + '</div></div>'
+                + '<div style="display:flex;gap:24px;">'
+                + '<div><span class="detail-label">Status</span><div class="detail-value">' + statusPill(issue.status) + '</div></div>'
+                + '<div><span class="detail-label">Priority</span><div class="detail-value">' + priorityPill(issue.priority) + '</div></div>'
+                + '</div>';
+            document.getElementById('issue-info').innerHTML = infoHtml;
+            document.getElementById('status-select').value = issue.status;
+            document.getElementById('priority-select').value = issue.priority;
+            document.getElementById('delete-issue-btn').style.display = 'block';
+            document.getElementById('new-tasklist-link').href = '/ui/issues/' + issueId + '/tasklists/new';
+
+            // Title inline edit
+            var titleDisplay = document.getElementById('display-title');
+            var titleInput = document.getElementById('edit-title');
+            var titleSave = document.getElementById('save-title-btn');
+            var titleCancel = document.getElementById('cancel-title-btn');
+            var titleEdit = document.getElementById('edit-title-btn');
+
+            titleEdit.addEventListener('click', function() {
+                titleDisplay.style.display = 'none';
+                titleEdit.style.display = 'none';
+                titleInput.style.display = 'block';
+                titleSave.style.display = 'inline-block';
+                titleCancel.style.display = 'inline-block';
+                titleInput.focus();
+            });
+
+            function cancelTitle() {
+                titleInput.value = titleDisplay.textContent === '—' ? '' : titleDisplay.textContent;
+                titleInput.style.display = 'none';
+                titleSave.style.display = 'none';
+                titleCancel.style.display = 'none';
+                titleDisplay.style.display = 'inline';
+                titleEdit.style.display = 'inline-block';
+            }
+            titleCancel.addEventListener('click', cancelTitle);
+
+            titleSave.addEventListener('click', async function() {
+                var newTitle = titleInput.value.trim();
+                if (!newTitle) { cancelTitle(); return; }
+                try {
+                    var res = await fetch('/api/issues/' + issueId, {
+                        method: 'PATCH',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({title: newTitle})
+                    });
+                    if (res.ok) {
+                        titleDisplay.textContent = newTitle;
+                        document.getElementById('issue-title').textContent = newTitle;
+                        document.getElementById('breadcrumb-issue').textContent = newTitle;
+                        cancelTitle();
+                    }
+                } catch(e) {}
+            });
+
+            titleInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') titleSave.click();
+                if (e.key === 'Escape') cancelTitle();
+            });
+
+            // Description inline edit
+            var descDisplay = document.getElementById('display-desc');
+            var descInput = document.getElementById('edit-desc');
+            var descSave = document.getElementById('save-desc-btn');
+            var descCancel = document.getElementById('cancel-desc-btn');
+            var descEdit = document.getElementById('edit-desc-btn');
+
+            descEdit.addEventListener('click', function() {
+                descDisplay.style.display = 'none';
+                descEdit.style.display = 'none';
+                descInput.style.display = 'block';
+                descSave.style.display = 'inline-block';
+                descCancel.style.display = 'inline-block';
+                descInput.focus();
+            });
+
+            function cancelDesc() {
+                descInput.value = descDisplay.textContent === '—' ? '' : descDisplay.textContent;
+                descInput.style.display = 'none';
+                descSave.style.display = 'none';
+                descCancel.style.display = 'none';
+                descDisplay.style.display = 'inline';
+                descEdit.style.display = 'inline-block';
+            }
+            descCancel.addEventListener('click', cancelDesc);
+
+            descSave.addEventListener('click', async function() {
+                var newDesc = descInput.value.trim();
+                try {
+                    var res = await fetch('/api/issues/' + issueId, {
+                        method: 'PATCH',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({description: newDesc || null})
+                    });
+                    if (res.ok) {
+                        descDisplay.textContent = newDesc || '—';
+                        cancelDesc();
+                    }
+                } catch(e) {}
+            });
+
+            descInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') cancelDesc();
+            });
+
+        } catch(e) {
+            document.getElementById('issue-info').innerHTML = '<div class="muted">Error loading issue</div>';
+        }
+    }
+
+    document.getElementById('update-btn').addEventListener('click', async function() {
+        var status = document.getElementById('status-select').value;
+        var priority = document.getElementById('priority-select').value;
+        var statusEl = document.getElementById('update-status');
+        statusEl.textContent = 'Updating…';
+        try {
+            // Serialize to avoid race condition: each PATCH reads-then-writes the full entity
+            var res1 = await fetch('/api/issues/' + issueId + '/status', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status: status})
+            });
+            var res2 = await fetch('/api/issues/' + issueId + '/priority', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({priority: priority})
+            });
+            if (res1.ok && res2.ok) {
+                statusEl.innerHTML = '<span class="pill pill-done">Updated!</span>';
+                loadIssue();
+            } else {
+                statusEl.innerHTML = '<span class="pill pill-failed">Error</span>';
+            }
+        } catch(e) {
+            statusEl.innerHTML = '<span class="pill pill-failed">Request failed</span>';
+        }
+    });
+
+    document.getElementById('delete-issue-btn').addEventListener('click', async function() {
+        if (!confirm('Delete this issue and all its tasklists?')) return;
+        try {
+            var res = await fetch('/api/issues/' + issueId + '?cascade=true', { method: 'DELETE' });
+            if (res.ok || res.status === 204) {
+                window.history.back();
+            } else { alert('Delete failed'); }
+        } catch(e) { alert('Delete failed'); }
+    });
+
+    async function loadTasklists() {
+        try {
+            var [tlRes, tasksRes] = await Promise.all([
+                fetch('/api/issues/' + issueId + '/tasklists'),
+                fetch('/api/tasks')
+            ]);
+            var tasklists = await tlRes.json();
+            var allTasks = await tasksRes.json();
+
+            var taskCounts = {};
+            allTasks.forEach(function(t) {
+                if (!taskCounts[t.tasklistId]) taskCounts[t.tasklistId] = {total:0, todo:0, doing:0, done:0, failed:0, canceled:0};
+                taskCounts[t.tasklistId].total++;
+                var s = t.status ? t.status.toLowerCase() : '';
+                if (taskCounts[t.tasklistId][s] !== undefined) taskCounts[t.tasklistId][s]++;
+            });
+
+            var container = document.getElementById('tasklists-list');
+            if (!tasklists || tasklists.length === 0) {
+                container.innerHTML = '<div class="empty-state empty-state-compact"><div>No tasklists yet. <a href="/ui/issues/' + issueId + '/tasklists/new">Create one</a></div></div>';
+                return;
+            }
+            var html = '<table><thead><tr>'
+                + '<th>Title</th><th>Status</th><th>Tasks</th><th></th>'
+                + '</tr></thead><tbody>';
+            tasklists.forEach(function(tl) {
+                var tc = taskCounts[tl.id] || {total:0, todo:0, doing:0, done:0, failed:0, canceled:0};
+                var countsHtml = tc.total === 0
+                    ? '<span class="muted">0</span>'
+                    : '<span>' + tc.total + '</span>'
+                      + ' <span class="pill pill-todo" style="font-size:10px;padding:1px 5px;">' + tc.todo + '</span>'
+                      + ' <span class="pill pill-doing" style="font-size:10px;padding:1px 5px;">' + tc.doing + '</span>'
+                      + ' <span class="pill pill-done" style="font-size:10px;padding:1px 5px;">' + tc.done + '</span>';
+                html += '<tr>'
+                    + '<td><a href="/ui/tasklists/' + esc(tl.id) + '"><strong>' + esc(tl.title) + '</strong></a></td>'
+                    + '<td>' + statusPill(tl.status) + '</td>'
+                    + '<td>' + countsHtml + '</td>'
+                    + '<td><a href="/ui/tasklists/' + esc(tl.id) + '" class="btn btn-small">View</a></td>'
+                    + '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        } catch(e) {
+            document.getElementById('tasklists-list').innerHTML = '<div class="muted">Error loading tasklists</div>';
+        }
+    }
+
+    loadIssue();
+    loadTasklists();
+    </script>
+
+    <style>
+    .card h3 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+    .edit-icon-btn {
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 14px;
+        padding: 2px 4px;
+        border-radius: 4px;
+        line-height: 1;
+    }
+    .edit-icon-btn:hover { color: var(--accent); background: var(--panel-2); }
+    .detail-grid-3 {
+        display: grid;
+        grid-template-columns: 1fr 0.6fr 0.6fr;
+        gap: 20px;
+    }
+    .card-half { }
+    @media (max-width: 900px) {
+        .detail-grid-3 { grid-template-columns: 1fr; }
+    }
+    </style>
+</div>
+</body>
+</html>

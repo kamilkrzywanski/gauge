@@ -1,0 +1,145 @@
+package com.sheahorn.gauge.resource;
+
+import com.sheahorn.gauge.domain.CreateTaskRequest;
+import com.sheahorn.gauge.domain.LinkDecomposedTaskRequest;
+import com.sheahorn.gauge.domain.PatchTasklistRequest;
+import com.sheahorn.gauge.domain.ReorderTasksRequest;
+import com.sheahorn.gauge.domain.Task;
+import com.sheahorn.gauge.domain.Tasklist;
+import com.sheahorn.gauge.domain.UpdateTasklistStatusRequest;
+import com.sheahorn.gauge.service.TaskService;
+import com.sheahorn.gauge.service.TasklistService;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+
+import java.util.List;
+import java.util.Map;
+
+@Path("/api/tasklists")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+public class TasklistResource {
+
+    @Inject
+    TasklistService service;
+
+    @Inject
+    TaskService taskService;
+
+    @Operation(
+        operationId = "tracker_list_tasklists",
+        summary = "List all tasklists, optionally filtered by ?q=searchPhrase (case-insensitive match on title)"
+    )
+    @GET
+    public Response list(@QueryParam("q") String q) {
+        if (q != null && !q.isBlank()) {
+            return Response.ok(service.search(q)).build();
+        }
+        return Response.ok(service.findAll()).build();
+    }
+
+    @Operation(
+        operationId = "tracker_create_tasklist_task",
+        summary = "Create a new task in a tasklist (auto-appended to end)"
+    )
+    @POST
+    @Path("/{tasklistId}/tasks")
+    public Response createTask(@PathParam("tasklistId") String tasklistId, CreateTaskRequest body) {
+        Task task = taskService.create(tasklistId, body.title(), body.description());
+        return Response.status(Response.Status.CREATED).entity(task).build();
+    }
+
+    @Operation(
+        operationId = "tracker_list_tasklist_tasks",
+        summary = "List all tasks in a tasklist"
+    )
+    @GET
+    @Path("/{tasklistId}/tasks")
+    public Response listTasks(@PathParam("tasklistId") String tasklistId) {
+        return Response.ok(taskService.findByTasklistId(tasklistId)).build();
+    }
+
+    @Operation(
+        operationId = "tracker_reorder_tasklist_tasks",
+        summary = "Reorder tasks within a tasklist"
+    )
+    @PATCH
+    @Path("/{tasklistId}/task-order")
+    public Response reorderTasks(@PathParam("tasklistId") String tasklistId, ReorderTasksRequest body) {
+        taskService.reorder(tasklistId, body.taskIds());
+        return Response.ok(taskService.findByTasklistId(tasklistId)).build();
+    }
+
+    @Operation(
+        operationId = "tracker_get_tasklist",
+        summary = "Get a tasklist by ID"
+    )
+    @GET
+    @Path("/{tasklistId}")
+    public Response get(@PathParam("tasklistId") String tasklistId) {
+        return service.findById(tasklistId)
+            .map(tasklist -> Response.ok(tasklist).build())
+            .orElse(Response.status(Response.Status.NOT_FOUND).build());
+    }
+
+    @Operation(
+        operationId = "tracker_patch_tasklist",
+        summary = "Edit simple field: title"
+    )
+    @PATCH
+    @Path("/{tasklistId}")
+    public Response patch(@PathParam("tasklistId") String tasklistId, PatchTasklistRequest body) {
+        return service.patch(tasklistId, body.title())
+            .map(tasklist -> Response.ok(tasklist).build())
+            .orElse(Response.status(Response.Status.NOT_FOUND).build());
+    }
+
+    @Operation(
+        operationId = "tracker_update_tasklist_status",
+        summary = "Update the status of a tasklist"
+    )
+    @PATCH
+    @Path("/{tasklistId}/status")
+    public Response updateStatus(@PathParam("tasklistId") String tasklistId, UpdateTasklistStatusRequest body) {
+        return service.updateStatus(tasklistId, body.status())
+            .map(tasklist -> Response.ok(tasklist).build())
+            .orElse(Response.status(Response.Status.NOT_FOUND).build());
+    }
+
+    @Operation(
+        operationId = "tracker_link_decomposed_task",
+        summary = "Set, change, or unset the task this tasklist decomposes"
+    )
+    @PATCH
+    @Path("/{tasklistId}/decomposes-task")
+    public Response linkDecomposedTask(@PathParam("tasklistId") String tasklistId, LinkDecomposedTaskRequest body) {
+        return service.updateDecomposesTask(tasklistId, body.taskId())
+            .map(tasklist -> Response.ok(tasklist).build())
+            .orElse(Response.status(Response.Status.NOT_FOUND).build());
+    }
+
+    @Operation(
+        operationId = "tracker_delete_tasklist",
+        summary = "Delete a tasklist. Requires ?cascade=true if tasks exist."
+    )
+    @DELETE
+    @Path("/{tasklistId}")
+    public Response delete(@PathParam("tasklistId") String tasklistId, @QueryParam("cascade") boolean cascade) {
+        if (!cascade && service.hasChildren(tasklistId)) {
+            return Response.status(Response.Status.CONFLICT)
+                .entity(Map.of("error", "CASCADE_REQUIRED", "message", "This resource has descendants. Retry with cascade=true."))
+                .build();
+        }
+        if (cascade) {
+            return service.cascadeDelete(tasklistId)
+                ? Response.noContent().build()
+                : Response.status(Response.Status.NOT_FOUND).build();
+        }
+        return service.deleteById(tasklistId)
+            ? Response.noContent().build()
+            : Response.status(Response.Status.NOT_FOUND).build();
+    }
+}

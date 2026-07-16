@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html th:fragment="layout(title, activePath, content)"
+      xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${title}">gauge</title>
+    <style>
+        :root {
+            --bg: #0f1318;
+            --panel: #171d24;
+            --panel-2: #1e2630;
+            --text: #e2e8f0;
+            --muted: #8899aa;
+            --accent: #6cb4ee;
+            --accent-2: #5eead4;
+            --danger: #f87171;
+            --warning: #fbbf24;
+            --success: #4ade80;
+            --border: #2a3442;
+            --gold: #fbbf24;
+            --todo: #60a5fa;
+            --doing: #fbbf24;
+            --done: #4ade80;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .layout {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            min-height: 100vh;
+        }
+        .sidebar {
+            background: #0b0e12;
+            border-right: 1px solid var(--border);
+            padding: 20px 14px;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        .brand {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 2px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .tagline { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+        .menu { display: flex; flex-direction: column; gap: 4px; }
+        .menu a {
+            display: block;
+            padding: 8px 12px;
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 14px;
+            transition: background 0.15s;
+        }
+        .menu a:hover { background: var(--panel); text-decoration: none; }
+        .bookmarks-section {
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+        .bookmarks-header {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            margin-bottom: 6px;
+            padding: 0 12px;
+        }
+        .menu a.active {
+            background: var(--panel-2);
+            border-left: 3px solid var(--accent);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .content { padding: 24px 28px; max-width: 1200px; }
+        .page-title { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+        .page-subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+        .grid { display: grid; gap: 16px; }
+        .grid-2 { grid-template-columns: 1fr 1fr; }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .card-body { padding: 16px 18px; }
+        .card h2, .card h3 { margin-bottom: 8px; }
+        .muted { color: var(--muted); }
+        .small { font-size: 12px; }
+        .stat { font-size: 32px; font-weight: 700; margin: 4px 0; }
+        .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .btn {
+            display: inline-block;
+            padding: 8px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--panel-2);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 13px;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .btn:hover { border-color: var(--accent); text-decoration: none; }
+        .btn-primary { background: #1a3a5c; border-color: #2a5a8a; }
+        .btn-good { background: #1a3d2a; border-color: #2a6a3a; }
+        .btn-danger { background: #4a1a1a; border-color: #7a2a2a; }
+        .btn-warning { background: #4a3a1a; border-color: #7a5a2a; }
+        .btn-small {
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--panel-2);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .btn-small:hover { border-color: var(--accent); }
+        .pill {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .pill-todo { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+        .pill-doing { background: #3d2e0a; color: #fbbf24; border: 1px solid #d97706; }
+        .pill-done { background: #1a3d2a; color: #4ade80; border: 1px solid #16a34a; }
+        .pill-failed { background: #4a1a1a; color: #f87171; border: 1px solid #dc2626; }
+        .pill-canceled { background: #2a2030; color: #a78bfa; border: 1px solid #7c3aed; }
+        .pill-low { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+        .pill-normal { background: #1e3a5f; color: #60a5fa; border: 1px solid #2563eb; }
+        .pill-high { background: #4a1a1a; color: #f87171; border: 1px solid #dc2626; }
+        .pill-admin { background: #4a3a1a; color: #fbbf24; border: 1px solid #d97706; }
+        .pill-user { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+        .stack { display: flex; flex-direction: column; gap: 10px; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 13px; color: var(--muted); font-weight: 500; }
+        input[type=text], input[type=password], input[type=email], input[type=number], select, textarea {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: #0c1016;
+            color: var(--text);
+            font-size: 14px;
+            outline: none;
+        }
+        input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+        textarea { resize: vertical; min-height: 60px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 2px solid var(--border);
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+        }
+        tr:hover td { background: var(--panel-2); }
+        .status-box { min-height: 22px; color: var(--muted); }
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+        .breadcrumb a { color: var(--accent); }
+        .breadcrumb .sep { color: var(--muted); font-weight: 700; }
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .detail-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .detail-value { font-size: 15px; margin-top: 2px; }
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 16px 0 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--muted);
+        }
+        .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+        .empty-state-compact {
+            text-align: center;
+            padding: 12px 20px;
+            color: var(--muted);
+        }
+        .key-reveal {
+            background: #0c1016;
+            border: 1px solid var(--accent);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-top: 8px;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 13px;
+            color: var(--accent-2);
+        }
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
+            .sidebar {
+                border-right: 0;
+                border-bottom: 1px solid var(--border);
+                height: auto;
+                position: static;
+            }
+            .detail-grid { grid-template-columns: 1fr; }
+            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="brand">Gauge</div>
+            <div class="tagline">ride shotgun with your daemons</div>
+            <nav class="menu">
+                <a href="/" th:classappend="${activePath.equals('/')} ? 'active' : ''">Dashboard</a>
+                <a href="/ui/projects" th:classappend="${activePath.equals('/ui/projects')} ? 'active' : ''">Projects</a>
+                <a href="/ui/search" th:classappend="${activePath.equals('/ui/search')} ? 'active' : ''">Search</a>
+                <a href="/ui/account" th:classappend="${activePath.equals('/ui/account')} ? 'active' : ''">Account</a>
+                <a th:if="${isAdmin}" href="/ui/users" th:classappend="${activePath.equals('/ui/users')} ? 'active' : ''">Users</a>
+            </nav>
+            <div id="bookmarks-section" class="bookmarks-section" style="display:none;">
+                <div class="bookmarks-header">Bookmarks</div>
+                <nav id="bookmarks-menu" class="menu"></nav>
+            </div>
+            <div style="margin-top: 24px;">
+                <form method="post" action="/logout" style="margin:0;">
+                    <button type="submit" class="btn btn-danger" style="width:100%;">Logout</button>
+                </form>
+            </div>
+        </aside>
+        <main class="content">
+            <th:block th:replace="${content}"/>
+        </main>
+    </div>
+    <script>
+    function getCookie(name) {
+        var prefix = name + '=';
+        var cookies = document.cookie.split(';');
+        for (var i = 0; i < cookies.length; i++) {
+            var c = cookies[i].trim();
+            if (c.indexOf(prefix) === 0) return decodeURIComponent(c.substring(prefix.length));
+        }
+        return null;
+    }
+
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+    async function loadBookmarks() {
+        var raw = getCookie('gauge_bookmarks');
+        if (!raw) return;
+        var ids = raw.split(',').filter(function(id) { return id.length > 0; });
+        if (ids.length === 0) return;
+
+        try {
+            var res = await fetch('/api/projects?ids=' + encodeURIComponent(ids.join(',')));
+            if (!res.ok) return;
+            var projects = await res.json();
+            if (!projects || projects.length === 0) return;
+
+            var section = document.getElementById('bookmarks-section');
+            var menu = document.getElementById('bookmarks-menu');
+            section.style.display = 'block';
+            menu.innerHTML = '';
+
+            // Preserve order from cookie
+            ids.forEach(function(id) {
+                var p = projects.find(function(proj) { return proj.id === id; });
+                if (p) {
+                    var a = document.createElement('a');
+                    a.href = '/ui/projects/' + esc(p.id);
+                    a.textContent = p.name || p.id.substring(0,8);
+                    menu.appendChild(a);
+                }
+            });
+        } catch(e) {}
+    }
+
+    document.addEventListener('DOMContentLoaded', loadBookmarks);
+    window.addEventListener('gauge-bookmarks-changed', function() { loadBookmarks(); });
+    </script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gauge — login</title>
+    <style>
+        :root {
+            --bg: #0f1318;
+            --panel: #171d24;
+            --panel-2: #1e2630;
+            --text: #e2e8f0;
+            --muted: #8899aa;
+            --accent: #6cb4ee;
+            --danger: #f87171;
+            --border: #2a3442;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .login-box {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 40px 36px;
+            width: 380px;
+            max-width: 90vw;
+        }
+        .brand {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            background: linear-gradient(135deg, var(--accent), #5eead4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .tagline { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+        .field { margin-bottom: 18px; }
+        .field label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--muted); }
+        .field input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: #0c1016;
+            color: var(--text);
+            font-size: 15px;
+        }
+        .field input:focus { outline: none; border-color: var(--accent); }
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: #1a3a5c;
+            color: var(--text);
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: bold;
+        }
+        .btn:hover { border-color: var(--accent); background: #235d85; }
+        .error {
+            background: #4a1a1a;
+            border: 1px solid var(--danger);
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 20px;
+            color: var(--danger);
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <div class="brand">Gauge</div>
+        <div class="tagline">ride shotgun with your daemons</div>
+
+        <div th:if="${error}" class="error" th:text="${error}">Invalid credentials</div>
+
+        <form method="post" action="/j_security_check">
+            <div class="field">
+                <label for="j_username">Username</label>
+                <input type="text" id="j_username" name="j_username" autocomplete="username" autofocus required>
+            </div>
+            <div class="field">
+                <label for="j_password">Password</label>
+                <input type="password" id="j_password" name="j_password" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn">Sign in</button>
+        </form>
+    </div>
+</body>
+</html>

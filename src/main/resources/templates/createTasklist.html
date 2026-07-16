@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Create Tasklist', activePath='/ui/projects', content=~{::#page-content})}">
+<body>
+<div id="page-content">
+    <div id="tasklist-path" class="project-path" style="margin-bottom:8px;">
+        <a href="/ui/projects">Projects</a>
+    </div>
+
+    <h1 class="page-title">Create Tasklist</h1>
+    <p class="page-subtitle">New tasklist for <span id="issue-name">…</span></p>
+
+    <div class="card" style="margin-bottom:24px;">
+        <div class="card-body">
+            <form id="create-tasklist-form" class="stack" style="gap:14px;">
+                <div class="form-group">
+                    <label>Title</label>
+                    <input type="text" id="f-tl-title" placeholder="Tasklist title" required>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <button type="submit" class="btn btn-primary">Create Tasklist</button>
+                    <a id="cancel-link" href="#" class="btn">Cancel</a>
+                </div>
+            </form>
+            <div id="create-tasklist-status" class="status-box" style="margin-top:12px;"></div>
+        </div>
+    </div>
+
+    <script th:inline="javascript">
+    var issueId = /*[[${issueId}]]*/ '';
+
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+    async function init() {
+        document.getElementById('cancel-link').href = '/ui/issues/' + issueId;
+
+        try {
+            var res = await fetch('/api/issues/' + issueId);
+            if (!res.ok) {
+                document.getElementById('issue-name').textContent = 'unknown issue';
+                return;
+            }
+            var issue = await res.json();
+            document.getElementById('issue-name').textContent = esc(issue.title || issueId.substring(0,8));
+
+            if (issue.projectId) {
+                var projRes = await fetch('/api/projects/' + issue.projectId);
+                if (projRes.ok) {
+                    var proj = await projRes.json();
+                    var ancRes = await fetch('/api/projects/' + issue.projectId + '/ancestors');
+                    var pathHtml = '<a href="/ui/projects">Projects</a>';
+                    if (ancRes.ok) {
+                        var ancestors = await ancRes.json();
+                        ancestors.reverse();
+                        ancestors.forEach(function(a) {
+                            pathHtml += ' <span class="sep">/</span> ';
+                            pathHtml += '<a href="/ui/projects/' + esc(a.id) + '">' + esc(a.name || a.id.substring(0,8)) + '</a>';
+                        });
+                    }
+                    pathHtml += ' <span class="sep">/</span> ';
+                    pathHtml += '<a href="/ui/issues/' + esc(issueId) + '">' + esc(issue.title || issueId.substring(0,8)) + '</a>';
+                    pathHtml += ' <span class="sep">/</span> <strong>New Tasklist</strong>';
+                    document.getElementById('tasklist-path').innerHTML = pathHtml;
+                }
+            }
+        } catch(e) {
+            document.getElementById('issue-name').textContent = 'error loading issue';
+        }
+    }
+
+    document.getElementById('create-tasklist-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var statusEl = document.getElementById('create-tasklist-status');
+        statusEl.textContent = 'Creating…';
+        try {
+            var body = { title: document.getElementById('f-tl-title').value };
+            var res = await fetch('/api/issues/' + issueId + '/tasklists', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            if (res.ok) {
+                var tl = await res.json();
+                statusEl.innerHTML = '<span class="pill pill-done">Created!</span> Redirecting…';
+                setTimeout(function() {
+                    window.location.href = '/ui/tasklists/' + tl.id;
+                }, 600);
+            } else {
+                statusEl.innerHTML = '<span class="pill pill-failed">Error creating tasklist</span>';
+            }
+        } catch(e) {
+            statusEl.innerHTML = '<span class="pill pill-failed">Request failed</span>';
+        }
+    });
+
+    init();
+    </script>
+
+    <style>
+    .project-path {
+        font-size: 15px;
+        color: var(--muted);
+    }
+    .project-path a {
+        color: var(--accent);
+        font-weight: 500;
+    }
+    .project-path .sep {
+        color: var(--muted);
+        font-weight: 700;
+        margin: 0 4px;
+    }
+    .project-path strong {
+        color: var(--text);
+    }
+    </style>
+</div>
+</body>
+</html>

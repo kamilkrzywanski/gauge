@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Project Detail', activePath='/ui/projects', content=~{::#page-content})}">
+<body>
+<div id="page-content">
+    <p class="page-subtitle">Viewing project <code th:text="${projectId}">…</code></p>
+    <h1 class="page-title" id="project-title" style="display:flex;align-items:center;gap:12px;">
+        <span id="project-title-text">Project Detail</span>
+        <button id="favorite-btn" class="favorite-btn" title="Add to favorites" style="display:none;">☆</button>
+        <button id="bookmark-btn" class="bookmark-btn" title="Bookmark this project" style="display:none;">⚐</button>
+    </h1>
+
+    <div id="project-path" class="project-path" style="margin-bottom:20px;">
+        <a href="/ui/projects">Projects</a>
+    </div>
+
+    <div class="detail-grid detail-grid-3" style="margin-bottom:24px;">
+        <div class="card">
+            <div class="card-body" style="position:relative;">
+                <h3>Project Info</h3>
+                <span id="info-lock-pill" style="position:absolute;top:16px;right:18px;display:none;"></span>
+                <div id="project-info" class="stack" style="gap:12px;">
+                    <div class="muted">Loading&hellip;</div>
+                </div>
+            </div>
+        </div>
+        <div class="card card-half">
+            <div class="card-body">
+                <h3>Insides</h3>
+                <div class="stack" style="gap:8px;">
+                    <a id="new-issue-link" href="#" class="btn btn-primary" style="text-align:center;">+ New Issue</a>
+                    <a id="new-subproject-link" href="#" class="btn btn-primary" style="text-align:center;">+ New Subproject</a>
+                    <div id="lock-toggle-area" style="display:none;">
+                        <hr style="border-color:var(--border);margin:4px 0;">
+                        <button id="lock-toggle-btn" class="btn btn-warning" style="width:100%;">🔒 Lock Removal</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card card-half">
+            <div class="card-body">
+                <h3>Outsides</h3>
+                
+                <div class="stack" style="gap:8px;">
+                    <select id="move-parent-select" style="width:100%;">
+                        <option value="">None (root level)</option>
+                    </select>
+                    <button id="move-btn" class="btn btn-primary" style="width:100%;">Move to Project</button>
+                    <button id="delete-btn" class="btn btn-danger" style="display:none;width:100%;">Delete Project</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2 class="section-title">Subprojects</h2>
+    <div id="subprojects-list">Loading&hellip;</div>
+
+    <h2 class="section-title">Issues</h2>
+    <div class="issues-toolbar" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+            <label for="sort-select" class="muted small">Sort:</label>
+            <select id="sort-select" style="font-size:13px;padding:4px 8px;">
+                <option value="PRIORITY_STATUS_NAME">Priority, Status, Name</option>
+                <option value="PRIORITY_NAME_STATUS">Priority, Name, Status</option>
+                <option value="STATUS_PRIORITY_NAME">Status, Priority, Name</option>
+                <option value="STATUS_NAME_PRIORITY">Status, Name, Priority</option>
+                <option value="NAME">Name</option>
+            </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+            <label class="muted small">Priority:</label>
+            <label class="filter-check"><input type="checkbox" class="filter-prio" value="HIGH" checked> HIGH</label>
+            <label class="filter-check"><input type="checkbox" class="filter-prio" value="NORMAL" checked> NORMAL</label>
+            <label class="filter-check"><input type="checkbox" class="filter-prio" value="LOW" checked> LOW</label>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+            <label class="muted small">Status:</label>
+            <label class="filter-check"><input type="checkbox" class="filter-status" value="TODO" checked> TODO</label>
+            <label class="filter-check"><input type="checkbox" class="filter-status" value="DOING" checked> DOING</label>
+            <label class="filter-check"><input type="checkbox" class="filter-status" value="DONE"> DONE</label>
+        </div>
+        <button id="reset-filters-btn" class="btn btn-small" title="Reset all filters">Reset</button>
+    </div>
+    <div id="issues-list">Loading&hellip;</div>
+
+    <script th:inline="javascript">
+    var projectId = /*[[${projectId}]]*/ '';
+
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+    function setCookie(name, value, days) {
+        var expires = '';
+        if (days) {
+            var d = new Date();
+            d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+            expires = '; expires=' + d.toUTCString();
+        }
+        document.cookie = name + '=' + encodeURIComponent(value) + expires + '; path=/; SameSite=Lax';
+    }
+
+    function getCookie(name) {
+        var prefix = name + '=';
+        var cookies = document.cookie.split(';');
+        for (var i = 0; i < cookies.length; i++) {
+            var c = cookies[i].trim();
+            if (c.indexOf(prefix) === 0) return decodeURIComponent(c.substring(prefix.length));
+        }
+        return null;
+    }
+
+    function getBookmarks() {
+        var raw = getCookie('gauge_bookmarks');
+        if (!raw) return [];
+        return raw.split(',').filter(function(id) { return id.length > 0; });
+    }
+
+    function setBookmarks(ids) {
+        setCookie('gauge_bookmarks', ids.join(','), 365);
+    }
+
+    function isBookmarked(id) {
+        return getBookmarks().indexOf(id) >= 0;
+    }
+
+    function toggleBookmark(id) {
+        var bookmarks = getBookmarks();
+        var idx = bookmarks.indexOf(id);
+        if (idx >= 0) {
+            bookmarks.splice(idx, 1);
+        } else {
+            bookmarks.push(id);
+        }
+        setBookmarks(bookmarks);
+        updateBookmarkBtn();
+        window.dispatchEvent(new CustomEvent('gauge-bookmarks-changed'));
+    }
+
+    function updateBookmarkBtn() {
+        var btn = document.getElementById('bookmark-btn');
+        if (!btn) return;
+        btn.style.display = 'inline-block';
+        if (isBookmarked(projectId)) {
+            btn.innerHTML = '⚑';
+            btn.style.color = 'var(--accent)';
+        } else {
+            btn.innerHTML = '⚐';
+            btn.style.color = 'var(--muted)';
+        }
+    }
+
+    var favoriteIds = [];
+
+    async function loadFavorites() {
+        try {
+            var res = await fetch('/api/favorites');
+            if (res.ok) {
+                favoriteIds = await res.json();
+            }
+        } catch(e) {}
+    }
+
+    function isFavorite(id) {
+        return favoriteIds.indexOf(id) >= 0;
+    }
+
+    async function toggleFavorite(id) {
+        var btn = document.getElementById('favorite-btn');
+        var wasFav = isFavorite(id);
+        // Optimistic update
+        if (wasFav) {
+            favoriteIds = favoriteIds.filter(function(fid) { return fid !== id; });
+        } else {
+            favoriteIds.push(id);
+        }
+        updateFavoriteBtn();
+
+        try {
+            if (wasFav) {
+                var res = await fetch('/api/favorites/' + encodeURIComponent(id), { method: 'DELETE' });
+                if (!res.ok && res.status !== 204) throw new Error('failed');
+            } else {
+                var res = await fetch('/api/favorites/' + encodeURIComponent(id), { method: 'POST' });
+                if (!res.ok && res.status !== 201) throw new Error('failed');
+            }
+        } catch(e) {
+            // Revert on error
+            if (wasFav) {
+                favoriteIds.push(id);
+            } else {
+                favoriteIds = favoriteIds.filter(function(fid) { return fid !== id; });
+            }
+            updateFavoriteBtn();
+        }
+    }
+
+    function updateFavoriteBtn() {
+        var btn = document.getElementById('favorite-btn');
+        if (!btn) return;
+        btn.style.display = 'inline-block';
+        if (isFavorite(projectId)) {
+            btn.innerHTML = '★';
+            btn.style.color = 'var(--gold)';
+            btn.title = 'Remove from favorites';
+        } else {
+            btn.innerHTML = '☆';
+            btn.style.color = 'var(--muted)';
+            btn.title = 'Add to favorites';
+        }
+    }
+
+    function statusPill(status) {
+        var cls = 'pill pill-' + status.toLowerCase();
+        return '<span class="' + cls + '">' + esc(status) + '</span>';
+    }
+
+    function priorityPill(priority) {
+        var cls = 'pill pill-' + priority.toLowerCase();
+        return '<span class="' + cls + '">' + esc(priority) + '</span>';
+    }
+
+    var allProjects = [];
+    var projectParentId = null;
+    var projectRemovalLock = '';
+    var isAdmin = /*[[${isAdmin}]]*/ false;
+
+    async function loadProject() {
+        try {
+            var res = await fetch('/api/projects/' + projectId);
+            if (!res.ok) {
+                document.getElementById('project-info').innerHTML = '<div class="muted">Project not found</div>';
+                return;
+            }
+            var p = await res.json();
+            projectParentId = p.parentId;
+            projectRemovalLock = p.removalLock || '';
+            document.getElementById('project-title-text').textContent = p.name || 'Project Detail';
+            updateBookmarkBtn();
+            updateFavoriteBtn();
+            updateLockUI();
+
+            var ancRes = await fetch('/api/projects/' + projectId + '/ancestors');
+            var ancestors = [];
+            if (ancRes.ok) {
+                ancestors = await ancRes.json();
+                ancestors.reverse();
+            }
+            var pathHtml = '<a href="/ui/projects">Projects</a>';
+            ancestors.forEach(function(a) {
+                pathHtml += ' <span class="sep">/</span> ';
+                if (a.id === projectId) {
+                    pathHtml += '<strong>' + esc(a.name || a.id.substring(0,8)) + '</strong>';
+                } else {
+                    pathHtml += '<a href="/ui/projects/' + esc(a.id) + '">' + esc(a.name || a.id.substring(0,8)) + '</a>';
+                }
+            });
+            document.getElementById('project-path').innerHTML = pathHtml;
+
+            var infoHtml = ''
+                + '<div><span class="detail-label">Name</span>'
+                + '<div class="detail-value" style="display:flex;align-items:center;gap:8px;">'
+                + '<span id="display-name">' + esc(p.name || '&mdash;') + '</span>'
+                + '<input id="edit-name" type="text" value="' + esc(p.name || '') + '" style="display:none;flex:1;padding:4px 8px;font-size:14px;">'
+                + '<button id="save-name-btn" class="btn btn-small btn-primary" style="display:none;">Save</button>'
+                + '<button id="cancel-name-btn" class="btn btn-small" style="display:none;">Cancel</button>'
+                + '<button id="edit-name-btn" class="edit-icon-btn" title="Edit name">&#9998;</button>'
+                + '</div></div>'
+                + '<div><span class="detail-label">Description</span>'
+                + '<div class="detail-value" style="display:flex;align-items:center;gap:8px;">'
+                + '<span id="display-desc" style="white-space:pre-wrap;">' + esc(p.description || '&mdash;') + '</span>'
+                + '<textarea id="edit-desc" style="display:none;flex:1;padding:4px 8px;font-size:14px;min-height:60px;resize:vertical;">' + esc(p.description || '') + '</textarea>'
+                + '<button id="save-desc-btn" class="btn btn-small btn-primary" style="display:none;">Save</button>'
+                + '<button id="cancel-desc-btn" class="btn btn-small" style="display:none;">Cancel</button>'
+                + '<button id="edit-desc-btn" class="edit-icon-btn" title="Edit description">&#9998;</button>'
+                + '</div></div>';
+            document.getElementById('project-info').innerHTML = infoHtml;
+
+            // Name inline edit
+            var nameDisplay = document.getElementById('display-name');
+            var nameInput = document.getElementById('edit-name');
+            var nameSave = document.getElementById('save-name-btn');
+            var nameCancel = document.getElementById('cancel-name-btn');
+            var nameEdit = document.getElementById('edit-name-btn');
+
+            nameEdit.addEventListener('click', function() {
+                nameDisplay.style.display = 'none';
+                nameEdit.style.display = 'none';
+                nameInput.style.display = 'block';
+                nameSave.style.display = 'inline-block';
+                nameCancel.style.display = 'inline-block';
+                nameInput.focus();
+            });
+
+            function cancelName() {
+                nameInput.value = nameDisplay.textContent === '—' ? '' : nameDisplay.textContent;
+                nameInput.style.display = 'none';
+                nameSave.style.display = 'none';
+                nameCancel.style.display = 'none';
+                nameDisplay.style.display = 'inline';
+                nameEdit.style.display = 'inline-block';
+            }
+            nameCancel.addEventListener('click', cancelName);
+
+            nameSave.addEventListener('click', async function() {
+                var newName = nameInput.value.trim();
+                if (!newName) { cancelName(); return; }
+                try {
+                    var res = await fetch('/api/projects/' + projectId, {
+                        method: 'PATCH',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({name: newName})
+                    });
+                    if (res.ok) {
+                        nameDisplay.textContent = newName;
+                        document.getElementById('project-title').textContent = newName;
+                        cancelName();
+                        loadProject();
+                    }
+                } catch(e) {}
+            });
+
+            nameInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') nameSave.click();
+                if (e.key === 'Escape') cancelName();
+            });
+
+            // Description inline edit
+            var descDisplay = document.getElementById('display-desc');
+            var descInput = document.getElementById('edit-desc');
+            var descSave = document.getElementById('save-desc-btn');
+            var descCancel = document.getElementById('cancel-desc-btn');
+            var descEdit = document.getElementById('edit-desc-btn');
+
+            descEdit.addEventListener('click', function() {
+                descDisplay.style.display = 'none';
+                descEdit.style.display = 'none';
+                descInput.style.display = 'block';
+                descSave.style.display = 'inline-block';
+                descCancel.style.display = 'inline-block';
+                descInput.focus();
+            });
+
+            function cancelDesc() {
+                descInput.value = descDisplay.textContent === '—' ? '' : descDisplay.textContent;
+                descInput.style.display = 'none';
+                descSave.style.display = 'none';
+                descCancel.style.display = 'none';
+                descDisplay.style.display = 'inline';
+                descEdit.style.display = 'inline-block';
+            }
+            descCancel.addEventListener('click', cancelDesc);
+
+            descSave.addEventListener('click', async function() {
+                var newDesc = descInput.value.trim();
+                try {
+                    var res = await fetch('/api/projects/' + projectId, {
+                        method: 'PATCH',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({description: newDesc || null})
+                    });
+                    if (res.ok) {
+                        descDisplay.textContent = newDesc || '—';
+                        cancelDesc();
+                    }
+                } catch(e) {}
+            });
+
+            descInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') cancelDesc();
+            });
+
+            document.getElementById('delete-btn').style.display = 'block';
+            document.getElementById('new-issue-link').href = '/ui/projects/' + projectId + '/issues/new';
+            document.getElementById('new-subproject-link').href = '/ui/projects/new?parentId=' + projectId;
+
+            var projRes = await fetch('/api/projects?flat=true');
+            allProjects = await projRes.json();
+            var sel = document.getElementById('move-parent-select');
+            sel.innerHTML = '<option value="">None (root level)</option>';
+            allProjects.forEach(function(op) {
+                if (op.id !== projectId) {
+                    sel.innerHTML += '<option value="' + esc(op.id) + '"' + (op.id === p.parentId ? ' selected' : '') + '>' + esc(op.name || op.id.substring(0,8)) + '</option>';
+                }
+            });
+
+            loadSubprojects();
+        } catch(e) {
+            document.getElementById('project-info').innerHTML = '<div class="muted">Error loading project</div>';
+        }
+    }
+
+    function loadSubprojects() {
+        var subs = allProjects.filter(function(p) { return p.parentId === projectId; });
+        subs.sort(function(a, b) { return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()); });
+        var container = document.getElementById('subprojects-list');
+        if (subs.length === 0) {
+            container.innerHTML = '<div class="empty-state empty-state-compact"><div>No subprojects. <a href="/ui/projects/new?parentId=' + projectId + '">Create one</a></div></div>';
+            return;
+        }
+        var html = '<table><thead><tr><th>Name</th><th>Description</th><th></th></tr></thead><tbody>';
+        subs.forEach(function(sp) {
+            html += '<tr>'
+                + '<td><a href="/ui/projects/' + esc(sp.id) + '"><strong>' + esc(sp.name || sp.id.substring(0,8)) + '</strong></a></td>'
+                + '<td class="muted small">' + esc(sp.description || '&mdash;') + '</td>'
+                + '<td><a href="/ui/projects/' + esc(sp.id) + '" class="btn btn-small">View</a></td>'
+                + '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    document.getElementById('move-btn').addEventListener('click', async function() {
+        var parentId = document.getElementById('move-parent-select').value;
+        var targetName = document.getElementById('move-parent-select').selectedOptions[0].textContent;
+        if (!confirm('Move this project to "' + targetName + '"?')) return;
+        try {
+            var res = await fetch('/api/projects/' + projectId + '/parent', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({parentId: parentId || null})
+            });
+            if (res.ok) {
+                loadProject();
+            } else {
+                alert('Error moving project');
+            }
+        } catch(e) { alert('Request failed'); }
+    });
+
+
+    function updateLockUI() {
+        var lockArea = document.getElementById('lock-toggle-area');
+        var lockBtn = document.getElementById('lock-toggle-btn');
+        var deleteBtn = document.getElementById('delete-btn');
+        var lockPill = document.getElementById('info-lock-pill');
+
+        if (!isAdmin) {
+            lockArea.style.display = 'none';
+            lockPill.style.display = 'none';
+        } else {
+            lockArea.style.display = 'block';
+            if (projectRemovalLock === 'locked') {
+                lockBtn.innerHTML = '🔓 Unlock Removal';
+                lockBtn.className = 'btn btn-good';
+                lockPill.innerHTML = '<span class="pill pill-high" style="font-size:11px;">🔒 Locked</span>';
+                lockPill.style.display = 'inline-block';
+                deleteBtn.disabled = true;
+                deleteBtn.title = 'Project is locked against removal';
+                deleteBtn.style.opacity = '0.5';
+                deleteBtn.style.cursor = 'not-allowed';
+            } else {
+                lockBtn.innerHTML = '🔒 Lock Removal';
+                lockBtn.className = 'btn btn-warning';
+                lockPill.innerHTML = '';
+                lockPill.style.display = 'none';
+                deleteBtn.disabled = false;
+                deleteBtn.title = '';
+                deleteBtn.style.opacity = '1';
+                deleteBtn.style.cursor = 'pointer';
+            }
+        }
+    }
+
+    document.getElementById('lock-toggle-btn').addEventListener('click', async function() {
+        var newLock = projectRemovalLock === 'locked' ? '' : 'locked';
+        try {
+            var res = await fetch('/api/projects/' + projectId, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({removalLock: newLock})
+            });
+            if (res.ok) {
+                projectRemovalLock = newLock;
+                updateLockUI();
+            } else {
+                var data = await res.json();
+                alert(data.message || 'Failed to change lock');
+            }
+        } catch(e) { alert('Request failed'); }
+    });
+
+    document.getElementById('delete-btn').addEventListener('click', async function() {
+        if (projectRemovalLock === 'locked') {
+            alert('This project is locked against removal.');
+            return;
+        }
+        if (!confirm('Delete this project and all its contents? This cannot be undone.')) return;
+        try {
+            var res = await fetch('/api/projects/' + projectId + '?cascade=true', { method: 'DELETE' });
+            if (res.ok || res.status === 204) {
+                if (projectParentId) {
+                    window.location.href = '/ui/projects/' + projectParentId;
+                } else {
+                    window.location.href = '/ui/projects';
+                }
+            } else {
+                var data = await res.json();
+                alert(data.message || 'Delete failed');
+            }
+        } catch(e) { alert('Delete failed'); }
+    });
+
+    function getSelectedFilters(className) {
+        var checks = document.querySelectorAll('.' + className + ':checked');
+        var values = [];
+        checks.forEach(function(c) { values.push(c.value); });
+        return values;
+    }
+
+    function buildIssuesUrl() {
+        var sort = document.getElementById('sort-select').value;
+        var prios = getSelectedFilters('filter-prio');
+        var statuses = getSelectedFilters('filter-status');
+        var params = [];
+        if (sort) params.push('sort=' + encodeURIComponent(sort));
+        if (prios.length > 0 && prios.length < 3) params.push('priority=' + encodeURIComponent(prios.join(',')));
+        if (statuses.length > 0 && statuses.length < 3) params.push('status=' + encodeURIComponent(statuses.join(',')));
+        var url = '/api/projects/' + projectId + '/issues';
+        if (params.length > 0) url += '?' + params.join('&');
+        return url;
+    }
+
+    async function loadIssues() {
+        try {
+            var url = buildIssuesUrl();
+            var res = await fetch(url);
+            var issues = await res.json();
+            var container = document.getElementById('issues-list');
+            if (!issues || issues.length === 0) {
+                container.innerHTML = '<div class="empty-state empty-state-compact"><div>No issues yet. <a href="/ui/projects/' + projectId + '/issues/new">Create one</a></div></div>';
+                return;
+            }
+            var html = '<table><thead><tr>'
+                + '<th>Title</th><th>Status</th><th>Priority</th><th></th>'
+                + '</tr></thead><tbody>';
+            issues.forEach(function(issue) {
+                html += '<tr>'
+                    + '<td><a href="/ui/issues/' + esc(issue.id) + '"><strong>' + esc(issue.title) + '</strong></a></td>'
+                    + '<td>' + statusPill(issue.status) + '</td>'
+                    + '<td>' + priorityPill(issue.priority) + '</td>'
+                    + '<td><a href="/ui/issues/' + esc(issue.id) + '" class="btn btn-small">View</a></td>'
+                    + '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        } catch(e) {
+            document.getElementById('issues-list').innerHTML = '<div class="muted">Error loading issues</div>';
+        }
+    }
+
+    function resetFilters() {
+        document.querySelectorAll('.filter-prio').forEach(function(c) { c.checked = true; });
+        document.querySelectorAll('.filter-status').forEach(function(c) { c.checked = true; });
+        document.getElementById('sort-select').value = 'PRIORITY_STATUS_NAME';
+        loadIssues();
+    }
+
+    document.getElementById('bookmark-btn').addEventListener('click', function() {
+        toggleBookmark(projectId);
+    });
+
+    document.getElementById('favorite-btn').addEventListener('click', function() {
+        toggleFavorite(projectId);
+    });
+
+    document.getElementById('sort-select').addEventListener('change', function() {
+        loadIssues();
+    });
+
+    document.querySelectorAll('.filter-prio').forEach(function(cb) {
+        cb.addEventListener('change', function() { loadIssues(); });
+    });
+
+    document.querySelectorAll('.filter-status').forEach(function(cb) {
+        cb.addEventListener('change', function() { loadIssues(); });
+    });
+
+    document.getElementById('reset-filters-btn').addEventListener('click', function() {
+        resetFilters();
+    });
+
+    loadFavorites();
+    loadProject();
+    loadIssues();
+    </script>
+
+    <style>
+    .project-path {
+        font-size: 15px;
+        color: var(--muted);
+    }
+    .project-path a {
+        color: var(--accent);
+        font-weight: 500;
+    }
+    .project-path .sep {
+        color: var(--muted);
+        font-weight: 700;
+        margin: 0 4px;
+    }
+    .project-path strong {
+        color: var(--text);
+    }
+    .detail-grid-3 {
+        display: grid;
+        grid-template-columns: 1fr 0.6fr 0.6fr;
+        gap: 20px;
+    }
+    .card h3 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+    .edit-icon-btn {
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 14px;
+        padding: 2px 4px;
+        border-radius: 4px;
+        line-height: 1;
+    }
+    .edit-icon-btn:hover { color: var(--accent); background: var(--panel-2); }
+    .bookmark-btn {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 0 4px;
+        line-height: 1;
+        transition: color 0.15s, transform 0.15s;
+    }
+    .bookmark-btn:hover { transform: scale(1.2); }
+    .favorite-btn {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 0 4px;
+        line-height: 1;
+        transition: color 0.15s, transform 0.15s;
+    }
+    .favorite-btn:hover { transform: scale(1.2); }
+    .filter-check {
+        font-size: 12px;
+        color: var(--muted);
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        cursor: pointer;
+    }
+    .filter-check input[type=checkbox] {
+        accent-color: var(--accent);
+    }
+    .card-half { }
+    @media (max-width: 900px) {
+        .detail-grid-3 { grid-template-columns: 1fr; }
+    }
+    </style>
+</div>
+</body>
+</html>

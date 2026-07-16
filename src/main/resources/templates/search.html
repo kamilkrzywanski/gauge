@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Search', activePath='/ui/search', content=~{::#page-content})}">
+<body>
+<div id="page-content">
+    <h1 class="page-title">Search</h1>
+    <p class="page-subtitle">Search across projects, issues, tasklists, and tasks</p>
+
+    <div class="card" style="margin-bottom:24px;">
+        <div class="card-body">
+            <form id="search-form" style="display:flex;gap:10px;align-items:flex-end;">
+                <div class="form-group" style="flex:1;">
+                    <label>Search phrase</label>
+                    <input type="text" id="search-input" placeholder="Search titles and descriptions…" autofocus>
+                </div>
+                <button type="submit" class="btn btn-primary">Search</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="search-results"></div>
+
+    <script>
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+    function snippet(text, phrase) {
+        if (!text || !phrase) return '';
+        var lower = text.toLowerCase();
+        var plower = phrase.toLowerCase();
+        var idx = lower.indexOf(plower);
+        if (idx === -1) {
+            if (text.length > 80) return esc(text.substring(0, 80)) + '…';
+            return esc(text);
+        }
+        var start = Math.max(0, idx - 30);
+        var end = Math.min(text.length, idx + phrase.length + 30);
+        var before = esc(text.substring(start, idx));
+        var match = esc(text.substring(idx, idx + phrase.length));
+        var after = esc(text.substring(idx + phrase.length, end));
+        var result = (start > 0 ? '…' : '') + before + '<mark>' + match + '</mark>' + after + (end < text.length ? '…' : '');
+        return result;
+    }
+
+    var allProjectsMap = {};
+    var ancestorCache = {};
+
+    async function loadProjects() {
+        try {
+            var res = await fetch('/api/projects?flat=true');
+            var projects = await res.json();
+            projects.forEach(function(p) { allProjectsMap[p.id] = p; });
+        } catch(e) {}
+    }
+
+    async function getAncestryPath(projectId) {
+        if (!projectId) return '';
+        if (ancestorCache[projectId]) return ancestorCache[projectId];
+        try {
+            var res = await fetch('/api/projects/' + projectId + '/ancestors');
+            if (!res.ok) { ancestorCache[projectId] = projectId.substring(0,8); return ancestorCache[projectId]; }
+            var ancestors = await res.json();
+            ancestors.reverse();
+            var parts = ancestors.map(function(a) { return '<a href="/ui/projects/' + esc(a.id) + '">' + esc(a.name || a.id.substring(0,8)) + '</a>'; });
+            ancestorCache[projectId] = parts.join(' <span class="sep">/</span> ');
+            return ancestorCache[projectId];
+        } catch(e) {
+            ancestorCache[projectId] = projectId.substring(0,8);
+            return ancestorCache[projectId];
+        }
+    }
+
+    async function resolveProjectId(result, type) {
+        if (type === 'project') return result.id;
+        if (type === 'issue') return result.projectId;
+        if (type === 'tasklist') {
+            try {
+                var res = await fetch('/api/issues/' + result.issueId);
+                if (res.ok) { var issue = await res.json(); return issue.projectId; }
+            } catch(e) {}
+            return null;
+        }
+        if (type === 'task') {
+            try {
+                var tlRes = await fetch('/api/tasklists/' + result.tasklistId);
+                if (!tlRes.ok) return null;
+                var tl = await tlRes.json();
+                var issRes = await fetch('/api/issues/' + tl.issueId);
+                if (!issRes.ok) return null;
+                var issue = await issRes.json();
+                return issue.projectId;
+            } catch(e) {}
+            return null;
+        }
+        return null;
+    }
+
+    function typeBadge(type) {
+        var map = {
+            project: {label: 'Project', cls: 'pill pill-normal'},
+            issue: {label: 'Issue', cls: 'pill pill-todo'},
+            tasklist: {label: 'Tasklist', cls: 'pill pill-doing'},
+            task: {label: 'Task', cls: 'pill pill-done'}
+        };
+        var b = map[type] || {label: type, cls: 'pill'};
+        return '<span class="' + b.cls + '" style="font-size:10px;padding:2px 7px;">' + b.label + '</span>';
+    }
+
+    async function doSearch(phrase) {
+        var container = document.getElementById('search-results');
+        if (!phrase || phrase.trim().length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        container.innerHTML = '<div class="muted" style="padding:20px;">Searching…</div>';
+
+        var q = encodeURIComponent(phrase.trim());
+        try {
+            var [projRes, issRes, tlRes, taskRes] = await Promise.all([
+                fetch('/api/projects?q=' + q),
+                fetch('/api/issues?q=' + q),
+                fetch('/api/tasklists?q=' + q),
+                fetch('/api/tasks?q=' + q)
+            ]);
+            var projects = await projRes.json();
+            var issues = await issRes.json();
+            var tasklists = await tlRes.json();
+            var tasks = await taskRes.json();
+
+            var total = projects.length + issues.length + tasklists.length + tasks.length;
+            if (total === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="icon">🔍</div><div>No results for <strong>' + esc(phrase) + '</strong></div></div>';
+                return;
+            }
+
+            var html = '<p class="muted small" style="margin-bottom:16px;">' + total + ' result(s) for <strong>' + esc(phrase) + '</strong></p>';
+
+            // Build all sections
+            var sections = [
+                {type: 'project', label: 'Projects', results: projects, fields: ['name', 'description']},
+                {type: 'issue', label: 'Issues', results: issues, fields: ['title', 'description']},
+                {type: 'tasklist', label: 'Tasklists', results: tasklists, fields: ['title']},
+                {type: 'task', label: 'Tasks', results: tasks, fields: ['title', 'description']}
+            ];
+
+            for (var s = 0; s < sections.length; s++) {
+                var sec = sections[s];
+                if (sec.results.length === 0) continue;
+
+                html += '<h2 class="section-title">' + sec.label + ' (' + sec.results.length + ')</h2>';
+                html += '<div class="search-results-list">';
+
+                for (var i = 0; i < sec.results.length; i++) {
+                    var r = sec.results[i];
+                    var title = r.name || r.title || r.id.substring(0,8);
+                    var link = '';
+                    if (sec.type === 'project') link = '/ui/projects/' + r.id;
+                    else if (sec.type === 'issue') link = '/ui/issues/' + r.id;
+                    else if (sec.type === 'tasklist') link = '/ui/tasklists/' + r.id;
+                    else link = '/ui/tasklists/' + r.tasklistId; // tasks link to their tasklist
+
+                    // Find which field matched for snippet
+                    var matchField = null;
+                    var plower = phrase.toLowerCase();
+                    for (var f = 0; f < sec.fields.length; f++) {
+                        var val = r[sec.fields[f]];
+                        if (val && val.toLowerCase().indexOf(plower) !== -1) {
+                            matchField = val;
+                            break;
+                        }
+                    }
+
+                    var projectId = await resolveProjectId(r, sec.type);
+                    var ancestry = projectId ? await getAncestryPath(projectId) : '';
+
+                    html += '<div class="search-result-row">';
+                    html += '<div class="search-result-header">';
+                    html += typeBadge(sec.type);
+                    html += '<a href="' + link + '"><strong>' + esc(title) + '</strong></a>';
+                    html += '</div>';
+                    if (ancestry) {
+                        html += '<div class="search-result-path muted small">' + ancestry + '</div>';
+                    }
+                    if (matchField) {
+                        html += '<div class="search-result-snippet">' + snippet(matchField, phrase) + '</div>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+
+            container.innerHTML = html;
+        } catch(e) {
+            container.innerHTML = '<div class="muted">Search failed</div>';
+        }
+    }
+
+    document.getElementById('search-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        doSearch(document.getElementById('search-input').value);
+    });
+
+    // Check for ?q= in URL on load
+    var urlParams = new URLSearchParams(window.location.search);
+    var initialQ = urlParams.get('q');
+    if (initialQ) {
+        document.getElementById('search-input').value = initialQ;
+        doSearch(initialQ);
+    }
+
+    loadProjects();
+    </script>
+
+    <style>
+    .search-results-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        margin-bottom: 24px;
+    }
+    .search-result-row {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        transition: background 0.15s;
+    }
+    .search-result-row:hover { background: var(--panel-2); }
+    .search-result-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 4px;
+    }
+    .search-result-path {
+        margin-bottom: 4px;
+    }
+    .search-result-path a { color: var(--muted); }
+    .search-result-path a:hover { color: var(--accent); }
+    .search-result-path .sep { color: var(--muted); margin: 0 3px; }
+    .search-result-snippet {
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.5;
+    }
+    .search-result-snippet mark {
+        background: rgba(251,191,36,0.25);
+        color: var(--warning);
+        padding: 1px 2px;
+        border-radius: 2px;
+    }
+    </style>
+</div>
+</body>
+</html>

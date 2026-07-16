@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Tasklist Detail', activePath='/ui/projects', content=~{::#page-content})}">
+<body>
+<div id="page-content">
+    <p class="page-subtitle">Viewing tasklist <code th:text="${tasklistId}">…</code></p>
+    <h1 class="page-title" id="tasklist-title">Tasklist Detail</h1>
+
+    <div class="breadcrumb" id="tasklist-path">
+        <a href="/ui/projects">Projects</a>
+        <span class="sep">/</span>
+        <span id="breadcrumb-project">Project</span>
+        <span class="sep">/</span>
+        <span id="breadcrumb-issue">Issue</span>
+        <span class="sep">/</span>
+        <span id="breadcrumb-tasklist">Tasklist</span>
+    </div>
+
+    <div class="detail-grid" style="margin-bottom:24px;">
+        <div class="card">
+            <div class="card-body">
+                <h3>Tasklist Info</h3>
+                <div id="tasklist-info" class="stack" style="gap:12px;">
+                    <div class="muted">Loading&hellip;</div>
+                </div>
+                <div class="actions" style="margin-top:16px;">
+                    <button id="delete-tl-btn" class="btn btn-danger" style="display:none;">Delete Tasklist</button>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <h3>Update Status</h3>
+                <div class="stack" style="gap:8px;">
+                    <select id="status-select">
+                        <option value="TODO">TODO</option>
+                        <option value="DOING">DOING</option>
+                        <option value="DONE">DONE</option>
+                        <option value="CANCELED">CANCELED</option>
+                    </select>
+                    <button id="update-status-btn" class="btn btn-primary">Update Status</button>
+                </div>
+                <div id="status-update-status" class="status-box" style="margin-top:8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom:24px;">
+        <div class="card-body">
+            <h3>Add Task</h3>
+            <form id="create-task-form" style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;">
+                <div class="form-group" style="flex:2;min-width:180px;">
+                    <label>Title</label>
+                    <input type="text" id="f-task-title" placeholder="Task title" required>
+                </div>
+                <div class="form-group" style="flex:3;min-width:200px;">
+                    <label>Description</label>
+                    <input type="text" id="f-task-desc" placeholder="Optional description">
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-bottom:0;">Add Task</button>
+            </form>
+            <div id="create-task-status" class="status-box" style="margin-top:8px;"></div>
+        </div>
+    </div>
+
+    <h2 class="section-title">Tasks</h2>
+    <div id="tasks-list">Loading&hellip;</div>
+
+    <script th:inline="javascript">
+    var tasklistId = /*[[${tasklistId}]]*/ '';
+
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+    function statusPill(status) {
+        var cls = 'pill pill-' + status.toLowerCase();
+        return '<span class="' + cls + '">' + esc(status) + '</span>';
+    }
+
+    async function loadTasklist() {
+        try {
+            var res = await fetch('/api/tasklists/' + tasklistId);
+            if (!res.ok) {
+                document.getElementById('tasklist-info').innerHTML = '<div class="muted">Tasklist not found</div>';
+                return;
+            }
+            var tl = await res.json();
+            document.getElementById('tasklist-title').textContent = tl.title || 'Tasklist Detail';
+            document.getElementById('breadcrumb-tasklist').textContent = tl.title || tasklistId.substring(0,8);
+
+            if (tl.issueId) {
+                var issueRes = await fetch('/api/issues/' + tl.issueId);
+                if (issueRes.ok) {
+                    var issue = await issueRes.json();
+                    document.getElementById('breadcrumb-issue').innerHTML = '<a href="/ui/issues/' + esc(tl.issueId) + '">' + esc(issue.title || tl.issueId.substring(0,8)) + '</a>';
+                    if (issue.projectId) {
+                        var projRes = await fetch('/api/projects/' + issue.projectId);
+                        if (projRes.ok) {
+                            var proj = await projRes.json();
+                            document.getElementById('breadcrumb-project').innerHTML = '<a href="/ui/projects/' + esc(issue.projectId) + '">' + esc(proj.name || issue.projectId.substring(0,8)) + '</a>';
+                        }
+                    }
+                }
+            }
+
+            var infoHtml = ''
+                + '<div><span class="detail-label">Title</span><div class="detail-value">' + esc(tl.title || '&mdash;') + '</div></div>'
+                + '<div><span class="detail-label">Status</span><div class="detail-value">' + statusPill(tl.status) + '</div></div>'
+                + '<div><span class="detail-label">Decomposes Task</span><div class="detail-value">' + (tl.decomposesTaskId ? esc(tl.decomposesTaskId.substring(0,8)) + '&hellip;' : '&mdash;') + '</div></div>';
+            document.getElementById('tasklist-info').innerHTML = infoHtml;
+            document.getElementById('status-select').value = tl.status;
+            document.getElementById('delete-tl-btn').style.display = 'inline-block';
+        } catch(e) {
+            document.getElementById('tasklist-info').innerHTML = '<div class="muted">Error loading tasklist</div>';
+        }
+    }
+
+    document.getElementById('update-status-btn').addEventListener('click', async function() {
+        var status = document.getElementById('status-select').value;
+        var statusEl = document.getElementById('status-update-status');
+        statusEl.textContent = 'Updating&hellip;';
+        try {
+            var res = await fetch('/api/tasklists/' + tasklistId + '/status', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status: status})
+            });
+            if (res.ok) {
+                statusEl.innerHTML = '<span class="pill pill-done">Updated!</span>';
+                loadTasklist();
+            } else {
+                statusEl.innerHTML = '<span class="pill pill-failed">Error</span>';
+            }
+        } catch(e) {
+            statusEl.innerHTML = '<span class="pill pill-failed">Request failed</span>';
+        }
+    });
+
+    document.getElementById('delete-tl-btn').addEventListener('click', async function() {
+        if (!confirm('Delete this tasklist and all its tasks?')) return;
+        try {
+            var res = await fetch('/api/tasklists/' + tasklistId + '?cascade=true', { method: 'DELETE' });
+            if (res.ok || res.status === 204) { window.history.back(); }
+            else { alert('Delete failed'); }
+        } catch(e) { alert('Delete failed'); }
+    });
+
+    async function loadTasks() {
+        try {
+            var res = await fetch('/api/tasklists/' + tasklistId + '/tasks');
+            var tasks = await res.json();
+            var container = document.getElementById('tasks-list');
+            if (!tasks || tasks.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="icon">&#x1F4DD;</div><div>No tasks yet. Add one above.</div></div>';
+                return;
+            }
+            tasks.sort(function(a, b) { return a.ordinal - b.ordinal; });
+            var html = '<table><thead><tr>'
+                + '<th>#</th><th>Title</th><th>Description</th><th>Status</th><th></th>'
+                + '</tr></thead><tbody>';
+            tasks.forEach(function(t) {
+                html += '<tr>'
+                    + '<td class="muted">' + t.ordinal + '</td>'
+                    + '<td><strong>' + esc(t.title) + '</strong></td>'
+                    + '<td class="muted small" style="white-space:pre-wrap;">' + esc(t.description || '&mdash;') + '</td>'
+                    + '<td>' + statusPill(t.status) + '</td>'
+                    + '<td><select class="task-status-select" data-task-id="' + esc(t.id) + '" style="font-size:12px;padding:2px 6px;">'
+                    + '<option value="TODO"' + (t.status === 'TODO' ? ' selected' : '') + '>TODO</option>'
+                    + '<option value="DOING"' + (t.status === 'DOING' ? ' selected' : '') + '>DOING</option>'
+                    + '<option value="DONE"' + (t.status === 'DONE' ? ' selected' : '') + '>DONE</option>'
+                    + '<option value="FAILED"' + (t.status === 'FAILED' ? ' selected' : '') + '>FAILED</option>'
+                    + '<option value="CANCELED"' + (t.status === 'CANCELED' ? ' selected' : '') + '>CANCELED</option>'
+                    + '</select></td>'
+                    + '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+
+            document.querySelectorAll('.task-status-select').forEach(function(sel) {
+                sel.addEventListener('change', async function() {
+                    var taskId = this.getAttribute('data-task-id');
+                    var newStatus = this.value;
+                    try {
+                        await fetch('/api/tasks/' + taskId + '/status', {
+                            method: 'PATCH',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({status: newStatus})
+                        });
+                        var row = this.closest('tr');
+                        row.cells[3].innerHTML = statusPill(newStatus);
+                    } catch(e) { loadTasks(); }
+                });
+            });
+        } catch(e) {
+            document.getElementById('tasks-list').innerHTML = '<div class="muted">Error loading tasks</div>';
+        }
+    }
+
+    document.getElementById('create-task-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var statusEl = document.getElementById('create-task-status');
+        statusEl.textContent = 'Creating&hellip;';
+        try {
+            var body = {
+                title: document.getElementById('f-task-title').value,
+                description: document.getElementById('f-task-desc').value || null
+            };
+            var res = await fetch('/api/tasklists/' + tasklistId + '/tasks', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            if (res.ok) {
+                statusEl.innerHTML = '<span class="pill pill-done">Created!</span>';
+                document.getElementById('f-task-title').value = '';
+                document.getElementById('f-task-desc').value = '';
+                loadTasks();
+            } else {
+                statusEl.innerHTML = '<span class="pill pill-failed">Error</span>';
+            }
+        } catch(e) {
+            statusEl.innerHTML = '<span class="pill pill-failed">Request failed</span>';
+        }
+    });
+
+    loadTasklist();
+    loadTasks();
+    </script>
+
+    <style>
+    .card h3 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+    </style>
+</div>
+</body>
+</html>

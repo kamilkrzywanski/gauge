@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Create Project', activePath='/ui/projects', content=~{::#page-content})}">
+<body>
+<div id="page-content">
+    <div id="project-path" class="project-path" style="margin-bottom:8px;">
+        <a href="/ui/projects">Projects</a>
+    </div>
+
+    <h1 class="page-title">Create Project</h1>
+    <p class="page-subtitle" id="page-subtitle">New project</p>
+
+    <div class="card" style="margin-bottom:24px;">
+        <div class="card-body">
+            <form id="create-form" class="stack" style="gap:14px;">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="f-name" placeholder="Project name" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="f-description" placeholder="Optional description" rows="3"></textarea>
+                </div>
+                <div class="form-group" style="max-width:300px;">
+                    <label>Parent Project</label>
+                    <select id="f-parentId">
+                        <option value="">None (root)</option>
+                    </select>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <button type="submit" class="btn btn-primary">Create Project</button>
+                    <a id="cancel-link" href="/ui/projects" class="btn">Cancel</a>
+                </div>
+            </form>
+            <div id="create-status" class="status-box" style="margin-top:12px;"></div>
+        </div>
+    </div>
+
+    <script th:inline="javascript">
+    var preselectedParentId = /*[[${parentId}]]*/ null;
+
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+    async function init() {
+        try {
+            var res = await fetch('/api/projects?flat=true');
+            var projects = await res.json();
+
+            var sel = document.getElementById('f-parentId');
+            sel.innerHTML = '<option value="">None (root)</option>';
+            projects.forEach(function(p) {
+                var selected = (preselectedParentId && p.id === preselectedParentId) ? ' selected' : '';
+                sel.innerHTML += '<option value="' + esc(p.id) + '"' + selected + '>' + esc(p.name || p.id.substring(0,8)) + '</option>';
+            });
+
+            if (preselectedParentId) {
+                var parent = projects.find(function(p) { return p.id === preselectedParentId; });
+                if (parent) {
+                    document.getElementById('page-subtitle').textContent = 'Subproject of ' + (parent.name || preselectedParentId.substring(0,8));
+                    document.getElementById('cancel-link').href = '/ui/projects/' + preselectedParentId;
+
+                    var ancRes = await fetch('/api/projects/' + preselectedParentId + '/ancestors');
+                    if (ancRes.ok) {
+                        var ancestors = await ancRes.json();
+                        ancestors.reverse();
+                        var pathHtml = '<a href="/ui/projects">Projects</a>';
+                        ancestors.forEach(function(a) {
+                            pathHtml += ' <span class="sep">/</span> ';
+                            pathHtml += '<a href="/ui/projects/' + esc(a.id) + '">' + esc(a.name || a.id.substring(0,8)) + '</a>';
+                        });
+                        pathHtml += ' <span class="sep">/</span> <strong>New Subproject</strong>';
+                        document.getElementById('project-path').innerHTML = pathHtml;
+                    }
+                }
+            }
+        } catch(e) {
+            // parent options will just be empty
+        }
+    }
+
+    document.getElementById('create-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var statusEl = document.getElementById('create-status');
+        statusEl.textContent = 'Creating…';
+        try {
+            var body = {
+                name: document.getElementById('f-name').value,
+                description: document.getElementById('f-description').value || null,
+                parentId: document.getElementById('f-parentId').value || null
+            };
+            var res = await fetch('/api/projects', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            if (res.ok) {
+                var project = await res.json();
+                statusEl.innerHTML = '<span class="pill pill-done">Created!</span> Redirecting…';
+                setTimeout(function() {
+                    window.location.href = '/ui/projects/' + project.id;
+                }, 600);
+            } else {
+                statusEl.innerHTML = '<span class="pill pill-failed">Error creating project</span>';
+            }
+        } catch(e) {
+            statusEl.innerHTML = '<span class="pill pill-failed">Request failed</span>';
+        }
+    });
+
+    init();
+    </script>
+
+    <style>
+    .project-path {
+        font-size: 15px;
+        color: var(--muted);
+    }
+    .project-path a {
+        color: var(--accent);
+        font-weight: 500;
+    }
+    .project-path .sep {
+        color: var(--muted);
+        font-weight: 700;
+        margin: 0 4px;
+    }
+    .project-path strong {
+        color: var(--text);
+    }
+    </style>
+</div>
+</body>
+</html>

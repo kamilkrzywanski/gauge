@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Account', activePath='/ui/account', content=~{::#page-content})}">
+<body>
+<div id="page-content">
+    <h1 class="page-title">Account Settings</h1>
+    <p class="page-subtitle">Manage your account and API keys</p>
+
+    <div class="grid grid-2" style="margin-bottom:24px;">
+        <div class="card">
+            <div class="card-body">
+                <h2>Your Account</h2>
+                <div id="account-info" class="stack" style="gap:12px;">
+                    <div class="muted">Loading&hellip;</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <h2>Change Password</h2>
+                <form id="password-form" class="stack" style="gap:10px;">
+                    <div class="form-group">
+                        <label>New Password</label>
+                        <input type="password" id="f-new-password" placeholder="New password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Change Password</button>
+                </form>
+                <div id="password-status" class="status-box" style="margin-top:8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <h2 class="section-title">API Keys</h2>
+    <div class="card" style="margin-bottom:24px;">
+        <div class="card-body">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h3 style="margin:0;">Your Keys</h3>
+                <button id="add-key-btn" class="btn btn-primary">Add New</button>
+            </div>
+            <div id="new-key-reveal" style="display:none;"></div>
+            <div id="apikeys-list">Loading&hellip;</div>
+        </div>
+    </div>
+
+    <script>
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+    function rolePill(role) {
+        var cls = 'pill pill-' + role.toLowerCase();
+        return '<span class="' + cls + '">' + esc(role) + '</span>';
+    }
+
+    var currentUserId = null;
+
+    async function loadAccount() {
+        try {
+            var res = await fetch('/api/users/me');
+            if (!res.ok) {
+                document.getElementById('account-info').innerHTML = '<div class="muted">Could not load account info</div>';
+                return;
+            }
+            var u = await res.json();
+            currentUserId = u.id;
+            document.getElementById('account-info').innerHTML =
+                '<div><span class="detail-label">Username</span><div class="detail-value">' + esc(u.username) + '</div></div>'
+                + '<div><span class="detail-label">Role</span><div class="detail-value">' + rolePill(u.role) + '</div></div>';
+        } catch(e) {
+            document.getElementById('account-info').innerHTML = '<div class="muted">Error loading account</div>';
+        }
+    }
+
+    document.getElementById('password-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        if (!currentUserId) return;
+        var statusEl = document.getElementById('password-status');
+        var newPassword = document.getElementById('f-new-password').value;
+        if (!newPassword) {
+            statusEl.innerHTML = '<span class="pill pill-failed">Password cannot be empty</span>';
+            return;
+        }
+        statusEl.textContent = 'Changing&hellip;';
+        try {
+            var res = await fetch('/api/users/' + currentUserId + '/password', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({password: newPassword})
+            });
+            if (res.ok) {
+                statusEl.innerHTML = '<span class="pill pill-done">Password changed!</span>';
+                document.getElementById('f-new-password').value = '';
+            } else {
+                var err = await res.json();
+                statusEl.innerHTML = '<span class="pill pill-failed">' + esc(err.error || 'Error') + '</span>';
+            }
+        } catch(e) {
+            statusEl.innerHTML = '<span class="pill pill-failed">Request failed</span>';
+        }
+    });
+
+    async function loadApiKeys() {
+        try {
+            var res = await fetch('/api/apikeys');
+            var keys = await res.json();
+            var container = document.getElementById('apikeys-list');
+            if (!keys || keys.length === 0) {
+                container.innerHTML = '<div class="muted">No API keys yet.</div>';
+                return;
+            }
+            var html = '<table><thead><tr><th>Name</th><th></th></tr></thead><tbody>';
+            keys.forEach(function(k) {
+                html += '<tr>'
+                    + '<td>' + esc(k.name) + '</td>'
+                    + '<td><button class="btn btn-small btn-danger" onclick="deleteKey(\'' + esc(k.id) + '\')">Remove</button></td>'
+                    + '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        } catch(e) {
+            document.getElementById('apikeys-list').innerHTML = '<div class="muted">Error loading API keys</div>';
+        }
+    }
+
+    async function deleteKey(id) {
+        if (!confirm('Remove this API key? It will stop working immediately.')) return;
+        try {
+            var res = await fetch('/api/apikeys/' + id, { method: 'DELETE' });
+            if (res.ok || res.status === 204) {
+                loadApiKeys();
+            } else {
+                alert('Failed to remove key');
+            }
+        } catch(e) { alert('Request failed'); }
+    }
+
+    document.getElementById('add-key-btn').addEventListener('click', async function() {
+        var name = prompt('Key name (e.g. "my laptop"):');
+        if (name === null) return;
+        if (!name.trim()) name = 'API Key';
+        try {
+            var res = await fetch('/api/apikeys', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: name.trim()})
+            });
+            if (res.ok) {
+                var data = await res.json();
+                var reveal = document.getElementById('new-key-reveal');
+                reveal.style.display = 'block';
+                reveal.innerHTML = '<div class="key-reveal">'
+                    + '<strong>New API Key — copy it now, it won\'t be shown again!</strong><br><br>'
+                    + '<code>' + esc(data.key) + '</code>'
+                    + '</div>';
+                loadApiKeys();
+            } else {
+                alert('Failed to create key');
+            }
+        } catch(e) { alert('Request failed'); }
+    });
+
+    loadAccount();
+    loadApiKeys();
+    </script>
+</div>
+</body>
+</html>

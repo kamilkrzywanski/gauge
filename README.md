@@ -1,0 +1,148 @@
+# Gauge
+
+Ride shotgun with your daemons.
+
+Gauge is a work tracker for a team of two - silicon driver and carbon navigator. The design follows the core cooperation dynamics principle: Human chooses the course, LLM does the job. The tracker is profiled primarily for LLM use, with simple, human-friendly UI establishing communication ground between each of teammates.
+
+Gauge provides just enough structure to organize a workstream or project of any scope (hence the name). The project is driven by the belief that simplicity and communication are far more efficient than constraints and bureaucracy.
+Ockham's razor always beats whips and chains, regardless of participants and their substrate.
+
+Settle comfortably in the passengers seat. Let your your AI companion steer, and hold the roadmap.
+
+## Quick Start
+
+### 1. Build
+
+```bash
+mvn clean package
+```
+Requires Java 17 and Maven.
+
+### 2. Configure
+
+You must configure security before using Gauge. Change at least master API key and pepper in `application.properties` from project's root. The app **refuses to start** if the master API key is still `change-me`.
+
+interface: `127.0.0.1`
+port: `8087`
+default credentials: `admin/admin`
+master API key: `change-me`
+pepper: `change-me`
+
+Consider changing default credentials if you expose Gauge to the open network. You can create additional users and API keys in the application. 
+
+### 3. Run
+
+```bash
+./runner.sh
+```
+Runner script supplies Gauge with additional `application.properties`, which override defaults from the jar. If you want to avoid this step, you have to modify sources (see Configuration below).
+
+### 4. Use
+
+The app listens on `http://127.0.0.1:8087` by default. UI is available at `/`.
+OpenAPI specs are available at `/q/swagger-ui`.
+
+## Configuration
+
+All settings live in `application.properties`. The minimal viable set:
+
+| Property | Description |
+|---|---|
+| `gauge.api-key.access` | Master Bearer token for API access |
+| `gauge.api-key.pepper` | Pepper for hashing user-created API keys |
+| `gauge.auth.admin.username` / `.password` | Seeded admin user for the browser UI |
+| `quarkus.http.port` | HTTP listen port |
+| `quarkus.hibernate-orm.database.generation` | Hibernate's DDL value |
+
+If you want the app to listen on all interfaces (respond to everybody), set host to `0.0.0.0`. Default DDL is set to `none`, which effectively will halt the startup. Safest startup choice is `update`.
+
+## Authentication
+
+Two parallel auth mechanisms:
+
+- **Browser UI** — form login with session cookies. The admin user is seeded on first boot.
+- **API** — Bearer token in the `Authorization` header. Accepts the master token (`gauge.api-key.access`) or user-created API keys (managed via the browser UI under Account).
+
+API endpoints also accept the session cookie, so a browser session works for both UI and API calls.
+
+## Data Model
+
+Gauge uses a straightforward data model for expressing worksteams:
+
+```
+Project  →  Issue  →  Tasklist  →  Task
+```
+
+Each level adds a different kind of structure rather than repeating the same pattern:
+
+- **Projects** form a *tree structure* of subprojects. Tree structure is an organising agent, allowing to adjust granularity of concerns until the distribution reaches satisfying levels. 
+- **Issues** are a flat *set* within a project. No tags, no cross-project links. Fuzzy relationships live in titles and descriptions, not in the schema. This is where the human and the LLM negotiate meaning. Issues act as a coupling "clutch" between subprojects and tasks - real-world requirements are rarely trivial enough to fit in a closed system. Gauge chooses communication over squeezing needs into structures.
+- **Tasklists** express *independent sub-workstreams* within an issue.
+- **Tasks** are *ordered steps* within a tasklist. A task is considered an atomic operation from its tasklists' point of view.
+- **Tasklists can decompose a task** — A task can refer to a whole tasklist within the same issue. The tasklist becomes the breakdown of that task. This is used primarily for creating execution tasklists, scheduling executions of other tasklists.
+
+| Level | Coupling | | Relation | Meaning |
+|---|---|---|---|
+| Project | Tree | Containing | Explicit hierarchy, no depth limits |
+| Issue | Undefined | Semantic | Fuzzy, unknown, inexpressible in simple terms, negotiated by human and LLM |
+| Tasklist | Horizontal | Neighbouring | Independent sub-workstreams |
+| Task | Vertical | Following | Ordered, atomic steps |
+
+Please note that a task can simply state it refers to a project, creating a semantic loopback in the structure. This hack, however, is useful only when refactoring implementation plans is costly, and only occurs after enough bad planning decisions are made. 
+
+## API
+
+All `/api/*` endpoints require a Bearer token. The API mirrors the data model:
+
+### Projects (`/api/projects`)
+
+CRUD, search (`?q=`), list by parent (`?parentId=`), flat list (`?flat=true`), list by IDs (`?ids=`), reparent, ancestors, analysis. Cascade delete requires `?cascade=true`. Projects can be locked against deletion with `removalLock`.
+
+### Issues (`/api/issues`, `/api/projects/{id}/issues`)
+
+CRUD, search, sort (`?sort=NAME|PRIORITY_STATUS_NAME|...`), filter by priority and status (`?priority=HIGH&status=TODO`), move to another project, cascade delete.
+
+### Tasklists (`/api/tasklists`, `/api/issues/{id}/tasklists`)
+
+CRUD, search, status update, link/unlink decomposed task, cascade delete.
+
+### Tasks (`/api/tasks`, `/api/tasklists/{id}/tasks`)
+
+CRUD, search, status update, reorder within tasklist.
+
+### Users (`/api/users`)
+
+List, create, get current user (`/me`), change password, delete. Admin-only for user management.
+
+### API Keys (`/api/apikeys`)
+
+Create (returns raw key once — store it), list, delete. Keys are hashed with SHA-256 + pepper.
+
+### Favorites (`/api/favorites`)
+
+Per-user project bookmarks. Add, remove, list, reset.
+
+### Admin (`/api/admin`)
+
+ID migration from UUID to sequential hex-8. One-time, destructive, guarded by a JVM flag.
+
+## Docker
+
+An example docker setup is provided in `docker/`. This example contains an nginx handling HTTPS, required for open network exposure. 
+
+```bash
+cd docker
+./setup.sh
+```
+
+Builds the jar, generates self-signed TLS certificates, and starts Gauge behind nginx at `https://localhost`.
+
+## Design Philosophy
+
+Gauge is a **singular-tenant** application. It assumes exactly two consumers: one human and one LLM daemon. It is not designed for teams, multitenancy, or agentic swarms. This constraint simplifies the entire stack — no tenant isolation, no row-level security, no scaling concerns.
+
+The coupling model at each level is deliberate. Projects are rigid trees. Issues are deliberately flat — fuzzy cross-cutting concerns live in naming conventions and search, not in the schema. Tasklists are parallel by default. Tasks are sequential. Each level adds a different kind of structure rather than repeating the same pattern.
+
+## License
+
+MIT — do whatever you want, just keep the copyright notice. See [LICENSE.md](LICENSE.md).

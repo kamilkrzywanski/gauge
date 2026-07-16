@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gauge — login failed</title>
+    <style>
+        :root {
+            --bg: #0f1318;
+            --panel: #171d24;
+            --text: #e2e8f0;
+            --muted: #8899aa;
+            --accent: #6cb4ee;
+            --danger: #f87171;
+            --border: #2a3442;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .box {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 40px 36px;
+            width: 400px;
+            max-width: 90vw;
+            text-align: center;
+        }
+        .icon { font-size: 48px; margin-bottom: 12px; }
+        h1 { margin: 0 0 8px; font-size: 22px; }
+        .msg { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+        a { color: var(--accent); text-decoration: none; font-size: 15px; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <div class="icon">&#9888;</div>
+        <h1>Login failed</h1>
+        <div class="msg" th:text="${message} ?: 'Your session expired or credentials are invalid.'">Your session expired or credentials are invalid.</div>
+        <a href="/login.html">Try again</a>
+    </div>
+</body>
+</html>

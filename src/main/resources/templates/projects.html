@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Projects', activePath='/ui/projects', content=~{::#page-content})}">
+<body>
+<div id="page-content">
+    <h1 class="page-title">Projects</h1>
+    <p class="page-subtitle">Manage your projects</p>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 style="margin:0;">All Projects</h2>
+        <div style="display:flex;align-items:center;gap:8px;">
+            <label for="sort-select" class="muted small">Sort:</label>
+            <select id="sort-select" style="font-size:13px;padding:4px 8px;">
+                <option value="name-id">Name, ID</option>
+                <option value="id-name">ID, Name</option>
+            </select>
+            <button id="reset-favorites-btn" class="btn btn-small" title="Reset all favorites">★ Reset</button>
+            <a href="/ui/projects/new" class="btn btn-primary">+ New Project</a>
+        </div>
+    </div>
+    <div id="working-project-bar" class="working-project-bar" style="display:none;margin-bottom:16px;padding:10px 14px;background:var(--panel-2);border-radius:8px;align-items:center;gap:10px;">
+        <span class="muted small">Working in:</span>
+        <span id="working-project-path" style="font-weight:600;"></span>
+        <button id="reset-working-btn" class="btn btn-small" title="Reset to root">✕ Reset</button>
+    </div>
+    <div id="projects-list">Loading&hellip;</div>
+
+    <script>
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+    function setCookie(name, value, days) {
+        var expires = '';
+        if (days) {
+            var d = new Date();
+            d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+            expires = '; expires=' + d.toUTCString();
+        }
+        document.cookie = name + '=' + encodeURIComponent(value) + expires + '; path=/; SameSite=Lax';
+    }
+
+    function getCookie(name) {
+        var prefix = name + '=';
+        var cookies = document.cookie.split(';');
+        for (var i = 0; i < cookies.length; i++) {
+            var c = cookies[i].trim();
+            if (c.indexOf(prefix) === 0) return decodeURIComponent(c.substring(prefix.length));
+        }
+        return null;
+    }
+
+    var allProjects = [];
+    var analysis = {};
+    var sortMode = 'name-id';
+    var workingProjectId = getCookie('gauge_working_project') || null;
+    var favoriteIds = [];
+    var bookmarkIds = [];
+
+    function loadBookmarkIds() {
+        var raw = getCookie('gauge_bookmarks');
+        bookmarkIds = raw ? raw.split(',').filter(function(id) { return id.length > 0; }) : [];
+    }
+
+    function sortProjects(list) {
+        return list.sort(function(a, b) {
+            // Favorites first
+            var aFav = favoriteIds.indexOf(a.id) >= 0 ? 0 : 1;
+            var bFav = favoriteIds.indexOf(b.id) >= 0 ? 0 : 1;
+            if (aFav !== bFav) return aFav - bFav;
+
+            var aName = (a.name || '').toLowerCase();
+            var bName = (b.name || '').toLowerCase();
+            var aId = a.id;
+            var bId = b.id;
+
+            if (sortMode === 'id-name') {
+                var ic = aId.localeCompare(bId);
+                if (ic !== 0) return ic;
+                return aName.localeCompare(bName);
+            } else {
+                var nc = aName.localeCompare(bName);
+                if (nc !== 0) return nc;
+                return aId.localeCompare(bId);
+            }
+        });
+    }
+
+    function buildTree(projects) {
+        var children = {};
+        projects.forEach(function(p) {
+            var pid = p.parentId || '__root__';
+            if (!children[pid]) children[pid] = [];
+            children[pid].push(p);
+        });
+        Object.keys(children).forEach(function(k) {
+            sortProjects(children[k]);
+        });
+        return children;
+    }
+
+    function bpPill(bp) {
+        if (!bp || bp === 'NONE') return '<span class="pill" style="background:var(--panel-2);color:var(--muted);">—</span>';
+        var cls = 'pill pill-' + bp.toLowerCase();
+        return '<span class="' + cls + '">' + esc(bp) + '</span>';
+    }
+
+    function statCell(val, colorClass) {
+        if (!val || val === 0) return '<span class="muted">0</span>';
+        return '<strong style="color:var(--' + colorClass + ');">' + val + '</strong>';
+    }
+
+    function renderTree(children, parentId, depth) {
+        var list = children[parentId] || [];
+        if (list.length === 0) return '';
+
+        var html = '';
+        list.forEach(function(p) {
+            var hasKids = children[p.id] && children[p.id].length > 0;
+            var nodeId = 'proj-' + p.id;
+            var name = p.name || p.id.substring(0,8);
+            var indent = depth * 24;
+            var a = analysis[p.id] || {};
+
+            html += '<div class="tree-row" style="padding-left:' + indent + 'px;">';
+            html += '<div class="tree-cell-toggle">';
+            if (hasKids) {
+                html += '<button class="tree-toggle" id="toggle-' + nodeId + '" onclick="toggleNode(\'' + nodeId + '\')" title="Expand/Collapse">&#9656;</button>';
+            } else {
+                html += '<span style="display:inline-block;width:20px;"></span>';
+            }
+            html += '</div>';
+            html += '<div class="tree-cell-icon">';
+            html += favoriteIds.indexOf(p.id) >= 0 ? '<span style="color:var(--gold);">★</span>' : '<span></span>';
+            html += '</div>';
+            html += '<div class="tree-cell-icon">';
+            html += bookmarkIds.indexOf(p.id) >= 0 ? '<span style="color:var(--accent);">⚑</span>' : '<span></span>';
+            html += '</div>';
+            html += '<div class="tree-cell-icon">';
+            html += (p.removalLock === 'locked') ? '<span style="color:var(--danger);">🔒</span>' : '<span></span>';
+            html += '</div>';
+            html += '<div class="tree-cell-name">';
+            html += '<a href="/ui/projects/' + esc(p.id) + '"><strong>' + esc(name) + '</strong></a>';
+            html += '</div>';
+            html += '<div class="tree-cell-prio">' + bpPill(a.bubbledPriority) + '</div>';
+            html += '<div class="tree-cell-stat">' + statCell(a.issueTodo, 'todo') + '</div>';
+            html += '<div class="tree-cell-stat">' + statCell(a.issueDoing, 'doing') + '</div>';
+            html += '<div class="tree-cell-stat">' + statCell(a.issueDone, 'done') + '</div>';
+            html += '<div class="tree-cell-stat">' + statCell(a.subprojectCount, 'text') + '</div>';
+            html += '<div class="tree-cell-stat">' + statCell(a.taskTodo, 'todo') + '</div>';
+            html += '<div class="tree-cell-stat">' + statCell(a.taskDoing, 'doing') + '</div>';
+            html += '<div class="tree-cell-action" style="display:flex;gap:4px;justify-content:flex-end;">';
+            html += '<button class="btn btn-small set-working-btn" data-project-id="' + esc(p.id) + '" title="Set as working project">📌</button>';
+            html += '<a href="/ui/projects/' + esc(p.id) + '" class="btn btn-small">View</a>';
+            html += '</div>';
+            html += '</div>';
+
+            if (hasKids) {
+                html += '<div class="tree-children" id="children-' + nodeId + '" style="display:none;">';
+                html += renderTree(children, p.id, depth + 1);
+                html += '</div>';
+            }
+        });
+        return html;
+    }
+
+    function toggleNode(nodeId) {
+        var children = document.getElementById('children-' + nodeId);
+        var toggle = document.getElementById('toggle-' + nodeId);
+        if (children.style.display === 'none') {
+            children.style.display = 'block';
+            toggle.innerHTML = '&#9662;';
+        } else {
+            children.style.display = 'none';
+            toggle.innerHTML = '&#9656;';
+        }
+    }
+
+    function renderAll() {
+        var container = document.getElementById('projects-list');
+        if (!allProjects || allProjects.length === 0) {
+            container.innerHTML = '<div class="empty-state"><div class="icon">&#x1F4CB;</div><div>No projects yet. <a href="/ui/projects/new">Create one</a></div></div>';
+            return;
+        }
+        var children = buildTree(allProjects);
+
+        var renderRoot = workingProjectId && allProjects.some(function(p) { return p.id === workingProjectId; })
+            ? workingProjectId
+            : '__root__';
+
+        var html = '<div class="tree-table">';
+        html += '<div class="tree-header">';
+        html += '<div class="tree-cell-toggle"></div>';
+        html += '<div class="tree-cell-icon"></div>';
+        html += '<div class="tree-cell-icon"></div>';
+        html += '<div class="tree-cell-icon"></div>';
+        html += '<div class="tree-cell-name">Name</div>';
+        html += '<div class="tree-cell-prio" title="Bubbled priority"><span class="th-line">Prio</span></div>';
+        html += '<div class="tree-cell-stat" title="Issues TODO (recursive)"><span class="th-line">issues</span><span class="th-line">todo</span></div>';
+        html += '<div class="tree-cell-stat" title="Issues DOING (recursive)"><span class="th-line">issues</span><span class="th-line">doing</span></div>';
+        html += '<div class="tree-cell-stat" title="Issues DONE (recursive)"><span class="th-line">issues</span><span class="th-line">done</span></div>';
+        html += '<div class="tree-cell-stat" title="Subprojects (recursive)"><span class="th-line">subs</span></div>';
+        html += '<div class="tree-cell-stat" title="Tasks TODO (recursive)"><span class="th-line">tasks</span><span class="th-line">todo</span></div>';
+        html += '<div class="tree-cell-stat" title="Tasks DOING (recursive)"><span class="th-line">tasks</span><span class="th-line">doing</span></div>';
+        html += '<div class="tree-cell-action"></div>';
+        html += '</div>';
+        html += renderTree(children, renderRoot, 0);
+        html += '</div>';
+        container.innerHTML = html;
+
+        document.querySelectorAll('.set-working-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var pid = this.getAttribute('data-project-id');
+                setCookie('gauge_working_project', pid, 365);
+                workingProjectId = pid;
+                updateWorkingBar();
+                renderAll();
+            });
+        });
+
+        updateWorkingBar();
+    }
+
+    async function updateWorkingBar() {
+        var bar = document.getElementById('working-project-bar');
+        var pathEl = document.getElementById('working-project-path');
+        if (!workingProjectId) {
+            bar.style.display = 'none';
+            return;
+        }
+        bar.style.display = 'flex';
+        pathEl.textContent = 'Loading…';
+        try {
+            var ancRes = await fetch('/api/projects/' + workingProjectId + '/ancestors');
+            if (ancRes.ok) {
+                var ancestors = await ancRes.json();
+                ancestors.reverse();
+                var parts = ancestors.map(function(a) { return a.name || a.id.substring(0,8); });
+                pathEl.textContent = parts.join(' / ');
+            } else {
+                pathEl.textContent = workingProjectId.substring(0,8);
+            }
+        } catch(e) {
+            pathEl.textContent = workingProjectId.substring(0,8);
+        }
+    }
+
+    document.getElementById('reset-working-btn').addEventListener('click', function() {
+        setCookie('gauge_working_project', '', -1);
+        workingProjectId = null;
+        document.getElementById('working-project-bar').style.display = 'none';
+        renderAll();
+    });
+
+    async function loadProjects() {
+        try {
+            var [projRes, analysisRes, favRes] = await Promise.all([
+                fetch('/api/projects?flat=true'),
+                fetch('/api/projects/analysis'),
+                fetch('/api/favorites')
+            ]);
+            allProjects = await projRes.json();
+            analysis = await analysisRes.json();
+            if (favRes.ok) {
+                favoriteIds = await favRes.json();
+            }
+            loadBookmarkIds();
+            renderAll();
+        } catch(e) {
+            document.getElementById('projects-list').innerHTML = '<div class="muted">Error loading projects</div>';
+        }
+    }
+
+    document.getElementById('sort-select').addEventListener('change', function() {
+        sortMode = this.value;
+        renderAll();
+    });
+
+    document.getElementById('reset-favorites-btn').addEventListener('click', async function() {
+        if (!confirm('Remove all favorites?')) return;
+        try {
+            var res = await fetch('/api/favorites', { method: 'DELETE' });
+            if (res.ok || res.status === 204) {
+                favoriteIds = [];
+                renderAll();
+            }
+        } catch(e) {}
+    });
+
+    loadProjects();
+    </script>
+
+    <style>
+    .tree-table {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+    }
+    .tree-header, .tree-row {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
+    }
+    .tree-header {
+        border-bottom: 2px solid var(--border);
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        align-items: flex-end;
+    }
+    .th-line { display: block; line-height: 1.3; }
+    .tree-cell-toggle { width: 28px; flex-shrink: 0; text-align: center; }
+    .tree-cell-icon { flex: 0 0 22px; text-align: center; font-size: 14px; }
+    .tree-cell-name { flex: 3; min-width: 0; padding-right: 8px; }
+    .tree-cell-prio { flex: 0 0 72px; text-align: center; }
+    .tree-cell-stat { flex: 0 0 58px; text-align: center; color: var(--muted); font-size: 15px; }
+    .tree-cell-action { flex: 0 0 100px; text-align: right; }
+    .tree-toggle {
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 12px;
+        padding: 0;
+        width: 20px;
+        height: 20px;
+        line-height: 20px;
+        text-align: center;
+        border-radius: 4px;
+    }
+    .tree-toggle:hover { color: var(--text); background: var(--panel-2); }
+    .tree-children { }
+    .tree-row:hover { background: var(--panel-2); }
+    </style>
+</div>
+</body>
+</html>
