@@ -1,7 +1,6 @@
 package com.sheahorn.gauge.service;
 
 import com.sheahorn.gauge.domain.ApiKey;
-import io.quarkus.elytron.security.common.BcryptUtil;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -35,10 +34,10 @@ public class ApiKeyService {
     }
 
     @Transactional
-    public CreateResult create(String userId, String name) {
+    public CreateResult create(String userId, String name, String restrictedProjectIds) {
         String rawKey = "atk-" + UUID.randomUUID().toString();
         String keyHash = hashKey(rawKey);
-        ApiKey ak = ApiKey.create(userId, name, keyHash);
+        ApiKey ak = ApiKey.create(userId, name, keyHash, restrictedProjectIds);
         ak.persist();
         return new CreateResult(ak, rawKey);
     }

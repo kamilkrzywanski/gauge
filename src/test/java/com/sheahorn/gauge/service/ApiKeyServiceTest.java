@@ -30,7 +30,7 @@ class ApiKeyServiceTest {
     // ---- helpers ----
 
     private ApiKeyService.CreateResult createKey(String userId, String name) {
-        return apiKeyService.create(userId, name);
+        return apiKeyService.create(userId, name, null);
     }
 
     // ---- 0: create — returns CreateResult with rawKey and persisted ApiKey ----
@@ -38,7 +38,7 @@ class ApiKeyServiceTest {
     @Test
     @Transactional
     void testCreateApiKey() {
-        ApiKeyService.CreateResult result = apiKeyService.create("USER001", "My API Key");
+        ApiKeyService.CreateResult result = apiKeyService.create("USER001", "My API Key", null);
         assertNotNull(result);
         assertNotNull(result.apiKey);
         assertNotNull(result.rawKey);
@@ -171,14 +171,14 @@ class ApiKeyServiceTest {
     @Test
     @Transactional
     void testCreateWithEmptyNamePassesThrough() {
-        ApiKeyService.CreateResult result = apiKeyService.create("USER001", "");
+        ApiKeyService.CreateResult result = apiKeyService.create("USER001", "", null);
         assertEquals("", result.apiKey.name);
     }
 
     @Test
     @Transactional
     void testCreateWithBlankNamePassesThrough() {
-        ApiKeyService.CreateResult result = apiKeyService.create("USER001", "   ");
+        ApiKeyService.CreateResult result = apiKeyService.create("USER001", "   ", null);
         assertEquals("   ", result.apiKey.name);
     }
 

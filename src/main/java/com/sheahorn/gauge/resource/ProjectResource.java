@@ -9,6 +9,7 @@ import com.sheahorn.gauge.domain.Priority;
 import com.sheahorn.gauge.domain.Project;
 import com.sheahorn.gauge.domain.ReparentProjectRequest;
 import com.sheahorn.gauge.domain.SortOption;
+import com.sheahorn.gauge.security.ProjectAccessGuard;
 import com.sheahorn.gauge.service.IssueService;
 import com.sheahorn.gauge.service.ProjectAnalysisService;
 import com.sheahorn.gauge.service.ProjectService;
@@ -41,6 +42,9 @@ public class ProjectResource {
     @Inject
     ProjectAnalysisService analysisService;
 
+    @Inject
+    ProjectAccessGuard accessGuard;
+
     @Context
     SecurityContext securityContext;
 
@@ -51,6 +55,9 @@ public class ProjectResource {
     @POST
     @Path("/{projectId}/issues")
     public Response createIssue(@PathParam("projectId") String projectId, CreateIssueRequest body) {
+        if (!accessGuard.canAccessProject(projectId)) {
+            return forbidden();
+        }
         Priority priority = body.priority() != null ? body.priority() : Priority.NORMAL;
         Issue issue = issueService.create(projectId, body.title(), body.description(), priority);
         return Response.status(Response.Status.CREATED).entity(issue).build();
@@ -68,6 +75,9 @@ public class ProjectResource {
         @QueryParam("priority") String priority,
         @QueryParam("status") String status
     ) {
+        if (!accessGuard.canAccessProject(projectId)) {
+            return forbidden();
+        }
         SortOption sortOption = null;
         if (sort != null && !sort.isBlank()) {
             try {
@@ -112,6 +122,10 @@ public class ProjectResource {
     )
     @POST
     public Response create(CreateProjectRequest body) {
+        // If parentId is set, check access to the parent
+        if (body.parentId() != null && !accessGuard.canAccessProject(body.parentId())) {
+            return forbidden();
+        }
         Project project = service.create(body.name(), body.description(), body.parentId());
         return Response.status(Response.Status.CREATED).entity(project).build();
     }
@@ -139,6 +153,10 @@ public class ProjectResource {
         } else {
             projects = service.findByParentId(parentId);
         }
+        // Filter out projects the key cannot access
+        projects = projects.stream()
+            .filter(p -> accessGuard.canAccessProject(p.id()))
+            .toList();
         return Response.ok(projects).build();
     }
 
@@ -149,6 +167,9 @@ public class ProjectResource {
     @GET
     @Path("/{projectId}")
     public Response get(@PathParam("projectId") String projectId) {
+        if (!accessGuard.canAccessProject(projectId)) {
+            return forbidden();
+        }
         return service.findById(projectId)
             .map(project -> Response.ok(project).build())
             .orElse(Response.status(Response.Status.NOT_FOUND).build());
@@ -161,6 +182,9 @@ public class ProjectResource {
     @GET
     @Path("/{projectId}/ancestors")
     public Response ancestors(@PathParam("projectId") String projectId) {
+        if (!accessGuard.canAccessProject(projectId)) {
+            return forbidden();
+        }
         if (service.findById(projectId).isEmpty()) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
@@ -174,6 +198,9 @@ public class ProjectResource {
     @PATCH
     @Path("/{projectId}")
     public Response patch(@PathParam("projectId") String projectId, PatchProjectRequest body) {
+        if (!accessGuard.canAccessProject(projectId)) {
+            return forbidden();
+        }
         // Only admin can set removalLock
         String removalLock = body.removalLock();
         if (removalLock != null && !isAdmin()) {
@@ -193,6 +220,12 @@ public class ProjectResource {
     @PATCH
     @Path("/{projectId}/parent")
     public Response reparent(@PathParam("projectId") String projectId, ReparentProjectRequest body) {
+        if (!accessGuard.canAccessProject(projectId)) {
+            return forbidden();
+        }
+        if (body.parentId() != null && !accessGuard.canAccessProject(body.parentId())) {
+            return forbidden();
+        }
         return service.reparent(projectId, body.parentId())
             .map(project -> Response.ok(project).build())
             .orElse(Response.status(Response.Status.NOT_FOUND).build());
@@ -215,6 +248,9 @@ public class ProjectResource {
     @DELETE
     @Path("/{projectId}")
     public Response delete(@PathParam("projectId") String projectId, @QueryParam("cascade") boolean cascade) {
+        if (!accessGuard.canAccessProject(projectId)) {
+            return forbidden();
+        }
         if (service.isLocked(projectId)) {
             return Response.status(Response.Status.CONFLICT)
                 .entity(Map.of("error", "LOCKED", "message", "This project is locked against removal."))
@@ -237,5 +273,11 @@ public class ProjectResource {
 
     private boolean isAdmin() {
         return securityContext != null && securityContext.isUserInRole("admin");
+    }
+
+    private Response forbidden() {
+        return Response.status(Response.Status.FORBIDDEN)
+            .entity(Map.of("error", "FORBIDDEN", "message", "This API key is not authorized to access this project."))
+            .build();
     }
 }

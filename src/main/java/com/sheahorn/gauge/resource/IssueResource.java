@@ -8,6 +8,7 @@ import com.sheahorn.gauge.domain.PatchIssueRequest;
 import com.sheahorn.gauge.domain.Tasklist;
 import com.sheahorn.gauge.domain.UpdateIssuePriorityRequest;
 import com.sheahorn.gauge.domain.UpdateIssueStatusRequest;
+import com.sheahorn.gauge.security.ProjectAccessGuard;
 import com.sheahorn.gauge.service.IssueService;
 import com.sheahorn.gauge.service.TasklistService;
 import jakarta.inject.Inject;
@@ -29,16 +30,26 @@ public class IssueResource {
     @Inject
     TasklistService tasklistService;
 
+    @Inject
+    ProjectAccessGuard accessGuard;
+
     @Operation(
         operationId = "tracker_list_issues",
         summary = "List all issues, optionally filtered by ?q=searchPhrase (case-insensitive match on title/description)"
     )
     @GET
     public Response list(@QueryParam("q") String q) {
+        java.util.List<Issue> issues;
         if (q != null && !q.isBlank()) {
-            return Response.ok(service.search(q)).build();
+            issues = service.search(q);
+        } else {
+            issues = service.findAll();
         }
-        return Response.ok(service.findAll()).build();
+        // Filter out issues the key cannot access
+        issues = issues.stream()
+            .filter(i -> accessGuard.canAccessIssue(i.id()))
+            .toList();
+        return Response.ok(issues).build();
     }
 
     @Operation(
@@ -48,6 +59,9 @@ public class IssueResource {
     @POST
     @Path("/{issueId}/tasklists")
     public Response createTasklist(@PathParam("issueId") String issueId, CreateTasklistRequest body) {
+        if (!accessGuard.canAccessIssue(issueId)) {
+            return forbidden();
+        }
         Tasklist tasklist = tasklistService.create(issueId, body.title(), body.decomposesTaskId());
         return Response.status(Response.Status.CREATED).entity(tasklist).build();
     }
@@ -59,6 +73,9 @@ public class IssueResource {
     @GET
     @Path("/{issueId}/tasklists")
     public Response listTasklists(@PathParam("issueId") String issueId) {
+        if (!accessGuard.canAccessIssue(issueId)) {
+            return forbidden();
+        }
         return Response.ok(tasklistService.findByIssueId(issueId)).build();
     }
 
@@ -69,6 +86,9 @@ public class IssueResource {
     @GET
     @Path("/{issueId}")
     public Response get(@PathParam("issueId") String issueId) {
+        if (!accessGuard.canAccessIssue(issueId)) {
+            return forbidden();
+        }
         return service.findById(issueId)
             .map(issue -> Response.ok(issue).build())
             .orElse(Response.status(Response.Status.NOT_FOUND).build());
@@ -81,6 +101,9 @@ public class IssueResource {
     @PATCH
     @Path("/{issueId}")
     public Response patch(@PathParam("issueId") String issueId, PatchIssueRequest body) {
+        if (!accessGuard.canAccessIssue(issueId)) {
+            return forbidden();
+        }
         return service.patch(issueId, body.title(), body.description())
             .map(issue -> Response.ok(issue).build())
             .orElse(Response.status(Response.Status.NOT_FOUND).build());
@@ -93,6 +116,9 @@ public class IssueResource {
     @PATCH
     @Path("/{issueId}/status")
     public Response updateStatus(@PathParam("issueId") String issueId, UpdateIssueStatusRequest body) {
+        if (!accessGuard.canAccessIssue(issueId)) {
+            return forbidden();
+        }
         return service.updateStatus(issueId, body.status())
             .map(issue -> Response.ok(issue).build())
             .orElse(Response.status(Response.Status.NOT_FOUND).build());
@@ -105,6 +131,9 @@ public class IssueResource {
     @PATCH
     @Path("/{issueId}/priority")
     public Response updatePriority(@PathParam("issueId") String issueId, UpdateIssuePriorityRequest body) {
+        if (!accessGuard.canAccessIssue(issueId)) {
+            return forbidden();
+        }
         return service.updatePriority(issueId, body.priority())
             .map(issue -> Response.ok(issue).build())
             .orElse(Response.status(Response.Status.NOT_FOUND).build());
@@ -117,6 +146,12 @@ public class IssueResource {
     @PATCH
     @Path("/{issueId}/project")
     public Response moveToProject(@PathParam("issueId") String issueId, MoveIssueRequest body) {
+        if (!accessGuard.canAccessIssue(issueId)) {
+            return forbidden();
+        }
+        if (!accessGuard.canAccessProject(body.projectId())) {
+            return forbidden();
+        }
         return service.moveToProject(issueId, body.projectId())
             .map(issue -> Response.ok(issue).build())
             .orElse(Response.status(Response.Status.NOT_FOUND).build());
@@ -129,6 +164,9 @@ public class IssueResource {
     @DELETE
     @Path("/{issueId}")
     public Response delete(@PathParam("issueId") String issueId, @QueryParam("cascade") boolean cascade) {
+        if (!accessGuard.canAccessIssue(issueId)) {
+            return forbidden();
+        }
         if (!cascade && service.hasChildren(issueId)) {
             return Response.status(Response.Status.CONFLICT)
                 .entity(Map.of("error", "CASCADE_REQUIRED", "message", "This resource has descendants. Retry with cascade=true."))
@@ -142,5 +180,11 @@ public class IssueResource {
         return service.deleteById(issueId)
             ? Response.noContent().build()
             : Response.status(Response.Status.NOT_FOUND).build();
+    }
+
+    private Response forbidden() {
+        return Response.status(Response.Status.FORBIDDEN)
+            .entity(Map.of("error", "FORBIDDEN", "message", "This API key is not authorized to access this project."))
+            .build();
     }
 }

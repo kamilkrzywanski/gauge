@@ -67,7 +67,7 @@ class ApiKeyResolverTest {
         user.persist();
 
         // Create an API key for the user
-        ApiKeyService.CreateResult result = apiKeyService.create(user.id, "Test Key");
+        ApiKeyService.CreateResult result = apiKeyService.create(user.id, "Test Key", null);
 
         Optional<ApiKey> resolved = apiKeyResolver.resolve(result.rawKey);
         assertTrue(resolved.isPresent());
@@ -88,7 +88,7 @@ class ApiKeyResolverTest {
         User admin = User.create("admin2", BcryptUtil.bcryptHash("password"), "admin");
         admin.persist();
 
-        ApiKeyService.CreateResult result = apiKeyService.create(admin.id, "Admin Key");
+        ApiKeyService.CreateResult result = apiKeyService.create(admin.id, "Admin Key", null);
 
         Optional<ApiKey> resolved = apiKeyResolver.resolve(result.rawKey);
         assertTrue(resolved.isPresent());

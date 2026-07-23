@@ -1,6 +1,7 @@
 package com.sheahorn.gauge.resource;
 
 import com.sheahorn.gauge.domain.ApiKey;
+import com.sheahorn.gauge.security.ProjectAccessGuard;
 import com.sheahorn.gauge.service.ApiKeyService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -20,6 +21,9 @@ public class ApiKeyResource {
     @Inject
     ApiKeyService service;
 
+    @Inject
+    ProjectAccessGuard accessGuard;
+
     @Context
     SecurityContext securityContext;
 
@@ -31,7 +35,15 @@ public class ApiKeyResource {
         }
         List<ApiKey> keys = service.findByUserId(userId);
         var result = keys.stream()
-                .map(k -> Map.of("id", k.id, "name", k.name))
+                .map(k -> {
+                    var m = new java.util.HashMap<String, Object>();
+                    m.put("id", k.id);
+                    m.put("name", k.name);
+                    if (k.restrictedProjectIds != null && !k.restrictedProjectIds.isBlank()) {
+                        m.put("restrictedProjectIds", k.restrictedProjectIds);
+                    }
+                    return m;
+                })
                 .toList();
         return Response.ok(result).build();
     }
@@ -46,13 +58,19 @@ public class ApiKeyResource {
         if (name == null || name.isBlank()) {
             name = "API Key";
         }
-        ApiKeyService.CreateResult result = service.create(userId, name);
+        String restrictedProjectIds = (String) body.get("restrictedProjectIds");
+        ApiKeyService.CreateResult result = service.create(userId, name, restrictedProjectIds);
+        var entity = Map.of(
+            "id", result.apiKey.id,
+            "name", result.apiKey.name,
+            "key", result.rawKey
+        );
+        if (restrictedProjectIds != null && !restrictedProjectIds.isBlank()) {
+            entity = new java.util.HashMap<>(entity);
+            entity.put("restrictedProjectIds", restrictedProjectIds);
+        }
         return Response.status(Response.Status.CREATED)
-                .entity(Map.of(
-                    "id", result.apiKey.id,
-                    "name", result.apiKey.name,
-                    "key", result.rawKey
-                ))
+                .entity(entity)
                 .build();
     }
 

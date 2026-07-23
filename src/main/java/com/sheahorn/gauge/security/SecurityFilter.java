@@ -13,7 +13,6 @@ import jakarta.ws.rs.ext.Provider;
 import java.security.Principal;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 @Provider
 @Priority(Priorities.AUTHENTICATION)
@@ -21,6 +20,9 @@ public class SecurityFilter implements ContainerRequestFilter {
 
     @Inject
     ApiKeyResolver apiKeyResolver;
+
+    @Inject
+    CurrentApiKey currentApiKey;
 
     @Override
     public void filter(ContainerRequestContext requestContext) {
@@ -58,6 +60,7 @@ public class SecurityFilter implements ContainerRequestFilter {
 
         ApiKey apiKey = resolved.get();
         requestContext.setProperty("gauge.api-key", apiKey);
+        currentApiKey.set(apiKey);
 
         // Set a SecurityContext so @RolesAllowed works for Bearer token users
         requestContext.setSecurityContext(new ApiKeySecurityContext(apiKey));

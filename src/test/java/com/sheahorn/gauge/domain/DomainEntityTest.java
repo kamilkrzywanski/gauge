@@ -149,7 +149,7 @@ class DomainEntityTest {
 
     @Test
     void testApiKeyCreate() {
-        ApiKey ak = ApiKey.create("USER001", "Test Key", "hash123");
+        ApiKey ak = ApiKey.create("USER001", "Test Key", "hash123", null);
         assertNotNull(ak.id);
         assertEquals(36, ak.id.length());
         assertTrue(ak.id.contains("-"));

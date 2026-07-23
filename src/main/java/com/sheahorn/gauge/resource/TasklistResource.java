@@ -7,6 +7,7 @@ import com.sheahorn.gauge.domain.ReorderTasksRequest;
 import com.sheahorn.gauge.domain.Task;
 import com.sheahorn.gauge.domain.Tasklist;
 import com.sheahorn.gauge.domain.UpdateTasklistStatusRequest;
+import com.sheahorn.gauge.security.ProjectAccessGuard;
 import com.sheahorn.gauge.service.TaskService;
 import com.sheahorn.gauge.service.TasklistService;
 import jakarta.inject.Inject;
@@ -29,16 +30,25 @@ public class TasklistResource {
     @Inject
     TaskService taskService;
 
+    @Inject
+    ProjectAccessGuard accessGuard;
+
     @Operation(
         operationId = "tracker_list_tasklists",
         summary = "List all tasklists, optionally filtered by ?q=searchPhrase (case-insensitive match on title)"
     )
     @GET
     public Response list(@QueryParam("q") String q) {
+        List<Tasklist> tasklists;
         if (q != null && !q.isBlank()) {
-            return Response.ok(service.search(q)).build();
+            tasklists = service.search(q);
+        } else {
+            tasklists = service.findAll();
         }
-        return Response.ok(service.findAll()).build();
+        tasklists = tasklists.stream()
+            .filter(tl -> accessGuard.canAccessTasklist(tl.id()))
+            .toList();
+        return Response.ok(tasklists).build();
     }
 
     @Operation(
@@ -48,6 +58,9 @@ public class TasklistResource {
     @POST
     @Path("/{tasklistId}/tasks")
     public Response createTask(@PathParam("tasklistId") String tasklistId, CreateTaskRequest body) {
+        if (!accessGuard.canAccessTasklist(tasklistId)) {
+            return forbidden();
+        }
         Task task = taskService.create(tasklistId, body.title(), body.description());
         return Response.status(Response.Status.CREATED).entity(task).build();
     }
@@ -59,6 +72,9 @@ public class TasklistResource {
     @GET
     @Path("/{tasklistId}/tasks")
     public Response listTasks(@PathParam("tasklistId") String tasklistId) {
+        if (!accessGuard.canAccessTasklist(tasklistId)) {
+            return forbidden();
+        }
         return Response.ok(taskService.findByTasklistId(tasklistId)).build();
     }
 
@@ -69,6 +85,9 @@ public class TasklistResource {
     @PATCH
     @Path("/{tasklistId}/task-order")
     public Response reorderTasks(@PathParam("tasklistId") String tasklistId, ReorderTasksRequest body) {
+        if (!accessGuard.canAccessTasklist(tasklistId)) {
+            return forbidden();
+        }
         taskService.reorder(tasklistId, body.taskIds());
         return Response.ok(taskService.findByTasklistId(tasklistId)).build();
     }
@@ -80,6 +99,9 @@ public class TasklistResource {
     @GET
     @Path("/{tasklistId}")
     public Response get(@PathParam("tasklistId") String tasklistId) {
+        if (!accessGuard.canAccessTasklist(tasklistId)) {
+            return forbidden();
+        }
         return service.findById(tasklistId)
             .map(tasklist -> Response.ok(tasklist).build())
             .orElse(Response.status(Response.Status.NOT_FOUND).build());
@@ -92,6 +114,9 @@ public class TasklistResource {
     @PATCH
     @Path("/{tasklistId}")
     public Response patch(@PathParam("tasklistId") String tasklistId, PatchTasklistRequest body) {
+        if (!accessGuard.canAccessTasklist(tasklistId)) {
+            return forbidden();
+        }
         return service.patch(tasklistId, body.title())
             .map(tasklist -> Response.ok(tasklist).build())
             .orElse(Response.status(Response.Status.NOT_FOUND).build());
@@ -104,6 +129,9 @@ public class TasklistResource {
     @PATCH
     @Path("/{tasklistId}/status")
     public Response updateStatus(@PathParam("tasklistId") String tasklistId, UpdateTasklistStatusRequest body) {
+        if (!accessGuard.canAccessTasklist(tasklistId)) {
+            return forbidden();
+        }
         return service.updateStatus(tasklistId, body.status())
             .map(tasklist -> Response.ok(tasklist).build())
             .orElse(Response.status(Response.Status.NOT_FOUND).build());
@@ -116,6 +144,9 @@ public class TasklistResource {
     @PATCH
     @Path("/{tasklistId}/decomposes-task")
     public Response linkDecomposedTask(@PathParam("tasklistId") String tasklistId, LinkDecomposedTaskRequest body) {
+        if (!accessGuard.canAccessTasklist(tasklistId)) {
+            return forbidden();
+        }
         return service.updateDecomposesTask(tasklistId, body.taskId())
             .map(tasklist -> Response.ok(tasklist).build())
             .orElse(Response.status(Response.Status.NOT_FOUND).build());
@@ -128,6 +159,9 @@ public class TasklistResource {
     @DELETE
     @Path("/{tasklistId}")
     public Response delete(@PathParam("tasklistId") String tasklistId, @QueryParam("cascade") boolean cascade) {
+        if (!accessGuard.canAccessTasklist(tasklistId)) {
+            return forbidden();
+        }
         if (!cascade && service.hasChildren(tasklistId)) {
             return Response.status(Response.Status.CONFLICT)
                 .entity(Map.of("error", "CASCADE_REQUIRED", "message", "This resource has descendants. Retry with cascade=true."))
@@ -141,5 +175,11 @@ public class TasklistResource {
         return service.deleteById(tasklistId)
             ? Response.noContent().build()
             : Response.status(Response.Status.NOT_FOUND).build();
+    }
+
+    private Response forbidden() {
+        return Response.status(Response.Status.FORBIDDEN)
+            .entity(Map.of("error", "FORBIDDEN", "message", "This API key is not authorized to access this project."))
+            .build();
     }
 }

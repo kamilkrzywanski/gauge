@@ -25,12 +25,16 @@ public class ApiKey extends PanacheEntityBase {
     @Column(name = "key_hash", nullable = false, length = 128)
     public String keyHash;
 
-    public static ApiKey create(String userId, String name, String keyHash) {
+    @Column(name = "restricted_project_ids", length = 4000)
+    public String restrictedProjectIds;
+
+    public static ApiKey create(String userId, String name, String keyHash, String restrictedProjectIds) {
         ApiKey ak = new ApiKey();
         ak.id = UUID.randomUUID().toString();
         ak.userId = userId;
         ak.name = name;
         ak.keyHash = keyHash;
+        ak.restrictedProjectIds = restrictedProjectIds;
         return ak;
     }
 
