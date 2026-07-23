@@ -37,7 +37,10 @@ public class MasterKeyGuard {
         }
 
         if (fatal) {
-            System.exit(1);
+            throw new IllegalStateException(
+                "Default API key credentials detected. " +
+                "Please change gauge.api-key.access and gauge.api-key.pepper in application.properties."
+            );
         }
     }
 }
